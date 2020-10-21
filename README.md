@@ -21,7 +21,7 @@
 |                        *Language* | Python                | C++/C#                                        | C++/Python                                          |  
 |           *RGB/Depth/Segm. views* | **Yes**               | **Yes**                                       | **Yes**                                             |
 |             *Multi-agent control* | **Yes**               | **Yes**                                       | **Yes**                                             |
-|                   *ROS interface* | _WIP_                 | **Yes**                                       | **Yes**                                             |
+|                   *ROS interface* | ROS2/Python           | ROS/C++                                       | ROS/C++                                             |
 |            *Hardware-In-The-Loop* | No                    | **Yes**                                       | No                                                  |
 |         *Fully steppable physics* | **Yes**               | No                                            | **Yes**                                             |
 |             *Aerodynamic effects* | Drag, downwash, ground| Drag                                          | Drag                                                |
@@ -38,19 +38,22 @@ Simulation **speed-up with respect to the wall-clock** when using
 - **AND** nearby *obstacles* **AND** a mildly complex *background* (see GIFs)
 - **AND** *24FPS* (in sim. clock), *64x48 pixel* capture of *6 channels* (RGBA, depth, segm.) on **EACH** drone
 
-|                                  | Lenovo P52 (i7-8850H/Quadro P2000) | 2020 MacBook Pro (i7-1068NG7) |
-| -------------------------------: | :--------------------------------: | :---------------------------: |
-| Rendering                        | OpenGL \*\*\*                      | CPU-based TinyRenderer        | 
-| Single drone, **no** vision      | 15.5x                              | 16.8x                         |
-| Single drone **with** vision     | 10.8x                              | 1.3x                          |
-| Multi-drone (10), **no** vision  | 2.1x                               | 2.3x                          |
-| Multi-drone (5) **with** vision  | 2.5x                               | 0.2x                          |
+|                                   | Lenovo P52 (i7-8850H/Quadro P2000) | 2020 MacBook Pro (i7-1068NG7) |
+| --------------------------------: | :--------------------------------: | :---------------------------: |
+| Rendering                         | OpenGL \*\*\*                      | CPU-based TinyRenderer        | 
+| Single drone, **no** vision       | 15.5x                              | 16.8x                         |
+| Single drone **with** vision      | 10.8x                              | 1.3x                          |
+| Multi-drone (10), **no** vision   | 2.1x                               | 2.3x                          |
+| Multi-drone (5) **with** vision   | 2.5x                               | 0.2x                          |
+| 80 drones in 4 env, **no** vision | 0.8x                               | 0.95x                         |
 
 > \*\*\* **on Ubuntu only, uncomment the line after `self.CLIENT = p.connect(p.DIRECT)` in `BaseAviary.py`**
 
-> **Note: use `gui=False` and `aggregate_phy_steps=int(SIM_HZ/CTRL_HZ)` for better performance**
+> **Note: use `gui=False` and `aggregate_phy_steps=int(SIM_HZ/CTRL_HZ)` to optimize performance**
 
 > While it is easy to—consciously or not—[cherry pick](https://en.wikipedia.org/wiki/Cherry_picking) statistics, \~5kHz PyBullet physics (CPU-only) is faster than [AirSim (1kHz)](https://arxiv.org/pdf/1705.05065.pdf) and more accurate than [Flightmare's 35kHz simple single quadcopter dynamics](https://arxiv.org/pdf/2009.00563.pdf)
+
+> Exploiting parallel computation—i.e., multiple (80) drones in multiple (4) environments (see script [`parallelism.sh`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/experiments/performance/parallelism.sh))—achieves PyBullet physics updates at \~20kHz 
 
 > Multi-agent 6-ch. video capture at \~750kB/s with CPU rendering (`(64*48)*(4+4+2)*24*5*0.2`) is comparable to [Flightmare's 240 RGB frames/s](https://arxiv.org/pdf/2009.00563.pdf) (`(32*32)*3*240`)—although in more complex [Unity environments](https://arxiv.org/pdf/2009.00563.pdf)—and up to an order of magnitude faster on Ubuntu, with OpenGL rendering
 
@@ -58,7 +61,7 @@ Simulation **speed-up with respect to the wall-clock** when using
 
 
 ## Requirements
-The repo was written using *Python 3.7.6* on *macOS 10.15* and tested on *Ubuntu 18.04.05*
+The repo was written using *Python 3.7* on *macOS 10.15* and tested on *Ubuntu 18.04*
 
 Major dependencies are [`gym`](https://gym.openai.com/docs/),  [`pybullet`](https://docs.google.com/document/d/10sXEhzFRSnvFcl3XxNGhnD4N2SedqwdAvK3dsihxVUA/edit#), 
 [`stable-baselines3`](https://stable-baselines3.readthedocs.io/en/master/guide/quickstart.html), [`rllib`](https://docs.ray.io/en/master/rllib.html) and [`ffmpeg`](https://ffmpeg.org) (for video recording only)
@@ -92,14 +95,14 @@ $ pip install -e .
 
 
 
-## Use
-There are 2 basic scripts in `examples/`: `fly.py` and `learn.py`
+## Examples
+There are 2 basic template scripts in `examples/`: `fly.py` and `learn.py`
 
 - `fly.py` runs an independent flight **using PID control** implemented in class [`DSLPIDControl`](https://github.com/JacopoPan/gym-pybullet-drones/tree/master/gym_pybullet_drones/control/DSLPIDControl.py)
 ```
 $ conda activate myenv                      # If using a conda environment
 $ cd gym-pybullet-drones/examples/
-$ python fly.py
+$ python fly.py                             # Try 'python fly.py -h' to show the script's customizable parameters
 ```
 > Tip: use the GUI's sliders and button `Use GUI RPM` to override the control with interactive inputs
 
@@ -111,7 +114,7 @@ $ python fly.py
 ```
 $ conda activate myenv                      # If using a conda environment
 $ cd gym-pybullet-drones/examples/
-$ python learn.py
+$ python learn.py                           # Try 'python learn.py -h' to show the script's customizable parameters
 ```
 <img src="files/readme_images/learn1.gif" alt="learning 1" width="400"> <img src="files/readme_images/learn2.gif" alt="learning 2" width="400">
 <img src="files/readme_images/learn3.gif" alt="learning 3" width="400"> <img src="files/readme_images/learn4.gif" alt="learning 4" width="400">
@@ -122,7 +125,7 @@ Other scripts in folder `examples/` are:
 ```
 $ conda activate myenv                      # If using a conda environment
 $ cd gym-pybullet-drones/examples/
-$ python compare.py
+$ python compare.py                         # Try 'python compare.py -h' to show the script's customizable parameters
 ```
 <img src="files/readme_images/trace_comparison.gif" alt="pid flight on sine trajectroy" width="360"> <img src="files/readme_images/trace_comparison.png" alt="control info" width="450">
 
@@ -130,7 +133,7 @@ $ python compare.py
 ```
 $ conda activate myenv                      # If using a conda environment
 $ cd gym-pybullet-drones/examples/
-$ python downwash.py
+$ python downwash.py                        # Try 'python downwash.py -h' to show the script's customizable parameters
 ```
 
 <img src="files/readme_images/downwash.gif" alt="downwash example" width="360"> <img src="files/readme_images/downwash.png" alt="control info" width="450">
@@ -139,15 +142,15 @@ $ python downwash.py
 ```
 $ conda activate myenv                      # If using a conda environment
 $ cd gym-pybullet-drones/examples/
-$ python physics.py
+$ python physics.py                         # Try 'python physics.py -h' to show the script's customizable parameters
 ```
 > Tip: also check the examples in [pybullet-examples](https://github.com/JacopoPan/pybullet-examples)
 
-- `_dev.py` is a script continuously updated with the latest features of `gym-pybullet-drones` like RGB, depth and segmentation views from each drone's POV or compatibility with RLlibs's [`MultiAgentEnv`](https://docs.ray.io/en/latest/rllib-env.html#multi-agent-and-hierarchical) class
+- `_dev.py` is an [*always in beta*](https://en.wikipedia.org/wiki/Perpetual_beta) script with the latest features of `gym-pybullet-drones` like RGB, depth and segmentation views from each drone's POV or compatibility with RLlibs's [`MultiAgentEnv`](https://docs.ray.io/en/latest/rllib-env.html#multi-agent-and-hierarchical) class
 ```
 $ conda activate myenv                      # If using a conda environment
 $ cd gym-pybullet-drones/examples/
-$ python _dev.py
+$ python _dev.py                            # Try 'python _dev.py -h' to show the script's customizable parameters
 ```
 
 <img src="files/readme_images/rgb.gif" alt="rgb view" width="270"> <img src="files/readme_images/dep.gif" alt="depth view" width="270"> <img src="files/readme_images/seg.gif" alt="segmentation view" width="270">
@@ -161,7 +164,7 @@ A flight arena for one (ore more) quadrotor can be created as a child class of `
 >>> env = BaseAviary( 
 >>>       drone_model=DroneModel.CF2X,      # See DroneModel Enum class for other quadcopter models 
 >>>       num_drones=1,                     # Number of drones 
->>>       visibility_radius=np.inf,         # Distance at which drones are considered neighbors, only used for multiple drones 
+>>>       neighbourhood_radius=np.inf,      # Distance at which drones are considered neighbors, only used for multiple drones 
 >>>       initial_xyzs=None,                # Initial XYZ positions of the drones
 >>>       initial_rpys=None,                # Initial roll, pitch, and yaw of the drones in radians 
 >>>       physics: Physics=Physics.PYB,     # Choice of (PyBullet) physics implementation 
@@ -169,7 +172,8 @@ A flight arena for one (ore more) quadrotor can be created as a child class of `
 >>>       aggregate_phy_steps=1,            # Number of physics updates within each call to BaseAviary.step()
 >>>       gui=True,                         # Whether to display PyBullet's GUI, only use this for debbuging
 >>>       record=False,                     # Whether to save a .mp4 video (if gui=True) or .png frames (if gui=False) in gym-pybullet-drones/files/, see script /files/ffmpeg_png2mp4.sh for encoding
->>>       obstacles=False)                  # Whether to add obstacles to the environment
+>>>       obstacles=False,                  # Whether to add obstacles to the environment
+>>>       user_debug_gui=True)              # Whether to use addUserDebugLine and addUserDebugParameter calls (it can slow down the GUI)
 ````
 And instantiated with `gym.make()`—see [`learn.py`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/examples/learn.py) for an example
 ```
@@ -188,6 +192,36 @@ Then, the environment can be stepped with
 
 
 
+### Create New Aviaries
+A new environment can be created as a child class of [`BaseAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/BaseAviary.py) (i.e. `class NewAviary(BaseAviary): ...`) and implementing the following 7 abstract methods
+```
+>>> #### 1
+>>> def _actionSpace(self):
+>>>     # e.g. return spaces.Box(low=np.zeros(4), high=np.ones(4), dtype=np.float32)
+>>> #### 2
+>>> def _observationSpace(self):
+>>>     # e.g. return spaces.Box(low=np.zeros(20), high=np.ones(20), dtype=np.float32)
+>>> #### 3
+>>> def _computeObs(self):
+>>>     # e.g. return self._getDroneStateVector(0)
+>>> #### 4
+>>> def _preprocessAction(self, action):
+>>>     # e.g. return np.clip(action, 0, 1)
+>>> #### 5
+>>> def _computeReward(self, obs):
+>>>     # e.g. return -1
+>>> #### 6
+>>> def _computeDone(self, obs):
+>>>     # e.g. return False
+>>> #### 7
+>>> def _computeInfo(self, obs):
+>>>     # e.g. return {"answer": 42}        # Calculated by the Deep Thought supercomputer in 7.5M years
+```
+See [`CtrlAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/CtrlAviary.py), [`VisionCtrlAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/VisionCtrlAviary.py), [`FlockAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/multi_agent_rl/FlockAviary.py), [`TakeoffAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/single_agent_rl/TakeoffAviary.py), and [`DynCtrlAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/DynCtrlAviary.py) for examples
+
+
+
+
 ### Action Spaces
 The action space's definition of an environment must be implemented in each child of [`BaseAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/BaseAviary.py) by function
 ```
@@ -198,23 +232,25 @@ In [`CtrlAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/g
 
 The dictionary's keys are `"0"`, `"1"`, .., `"n"`—where `n` is the number of drones
 
-The action space of [`MARLFlockAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/MARLFlockAviary.py) has the same structure but values are normalized in range `[-1, 1]`
+The action space of [`FlockAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/multi_agent_rl/FlockAviary.py) has the same structure but values are normalized in range `[-1, 1]`
 
-The action space of [`RLTakeoffAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/RLTakeoffAviary.py) is a single [`Box(4,)`](https://github.com/openai/gym/blob/master/gym/spaces/box.py) normalized to the `[-1, 1]` range
+The action space of [`TakeoffAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/single_agent_rl/TakeoffAviary.py) is a single [`Box(4,)`](https://github.com/openai/gym/blob/master/gym/spaces/box.py) normalized to the `[-1, 1]` range
 
 Each child of [`BaseAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/BaseAviary.py) also needs to implement a preprocessing step translating actions into RPMs
 ```
 >>> def _preprocessAction(self, action):
 >>>     ...
 ```
-[`CtrlAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/CtrlAviary.py), [`VisionCtrlAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/VisionCtrlAviary.py), [`MARLFlockAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/MARLFlockAviary.py), and [`RLTakeoffAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/RLTakeoffAviary.py) all simply clip the inputs to `MAX_RPM`
+[`CtrlAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/CtrlAviary.py), [`VisionCtrlAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/VisionCtrlAviary.py), [`FlockAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/multi_agent_rl/FlockAviary.py), and [`TakeoffAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/single_agent_rl/TakeoffAviary.py) all simply clip the inputs to `MAX_RPM`
 
 #### Pre-process Actions for Control by Thrust and Torques
-[`DynCtrlAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/DynCtrlAviary.py)'s `action` input to `DynCtrlAviary.step()` is still a [`Dict()`](https://github.com/openai/gym/blob/master/gym/spaces/dict.py) of [`Box(4,)`](https://github.com/openai/gym/blob/master/gym/spaces/box.py) but the 4 values are:
+[`DynCtrlAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/DynCtrlAviary.py)'s `action` input to `DynCtrlAviary.step()` is a [`Dict()`](https://github.com/openai/gym/blob/master/gym/spaces/dict.py) of [`Box(4,)`](https://github.com/openai/gym/blob/master/gym/spaces/box.py) containing
 - The desired thrust along the drone's z-axis
 - The desired torque around the drone's x-axis
 - The desired torque around the drone's y-axis
 - The desired torque around the drone's z-axis
+
+From these, desired RPMs are computed by [`DynCtrlAviary._preprocessAction()`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/DynCtrlAviary.py)
 
 
 
@@ -239,9 +275,9 @@ Each [`Box(20,)`](https://github.com/openai/gym/blob/master/gym/spaces/box.py) c
 
 Each [`MultiBinary(num_drones)`](https://github.com/openai/gym/blob/master/gym/spaces/multi_binary.py) contains the drone's own row of the multi-robot system [adjacency matrix](https://en.wikipedia.org/wiki/Adjacency_matrix)
 
-The observation space of [`MARLFlockAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/MARLFlockAviary.py) has the same structure but normalized to the `[-1, 1]` range
+The observation space of [`FlockAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/multi_agent_rl/FlockAviary.py) has the same structure but normalized to the `[-1, 1]` range
 
-The observation space of [`RLTakeoffAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/RLTakeoffAviary.py) is a single [`Box(20,)`](https://github.com/openai/gym/blob/master/gym/spaces/box.py), normalized to the `[-1, 1]` range
+The observation space of [`TakeoffAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/single_agent_rl/TakeoffAviary.py) is a single [`Box(20,)`](https://github.com/openai/gym/blob/master/gym/spaces/box.py), normalized to the `[-1, 1]` range
 
 The observation space of [`VisionCtrlAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/VisionCtrlAviary.py) is the same as[`CtrlAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/CtrlAviary.py) but also includes keys `rgb`, `dep`, and `seg` (in each drone's dictionary) for the matrices containing the drone's RGB, depth, and segmentation views
 
@@ -250,7 +286,7 @@ To fill/customize the content of each `obs`, every child of [`BaseAviary`](https
 >>> def _computeObs(self, action):
 >>>     ...
 ```
-See [`BaseAviary._exportFrame()`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/BaseAviary.py)) and its use in [`VisionCtrlAviary._computeObs()`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/VisionCtrlAviary.py) to save frames as PNGs
+See [`BaseAviary._exportImage()`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/BaseAviary.py)) and its use in [`VisionCtrlAviary._computeObs()`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/VisionCtrlAviary.py) to save frames as PNGs
 
 
 
@@ -264,7 +300,7 @@ See [`BaseAviary._exportFrame()`](https://github.com/JacopoPan/gym-pybullet-dron
 >>> def _computeInfo(self, obs):
 >>>     ...                                 # dict or dict of dicts
 ```
-See [`RLTakeoffAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/RLTakeoffAviary.py) and [`MARLFlockAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/MARLFlockAviary.py) for example implementations
+See [`TakeoffAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/single_agent_rl/TakeoffAviary.py) and [`FlockAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/multi_agent_rl/FlockAviary.py) for example implementations
 
 
 
@@ -273,6 +309,17 @@ See [`RLTakeoffAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/ma
 Simple drag, ground effect, and downwash models can be included in the simulation initializing `BaseAviary()` with `physics=Physics.PYB_GND_DRAG_DW`, these are based on the system identification of [Forster (2015)](http://mikehamer.info/assets/papers/Crazyflie%20Modelling.pdf) (Eq. 4.2), the analytical model used as a baseline for comparison by [Shi et al. (2019)](https://arxiv.org/pdf/1811.08027.pdf) (Eq. 15), and [DSL](https://www.dynsyslab.org/vision-news/)'s experimental work
 
 Check the implementations of `_drag()`, `_groundEffect()`, and `_downwash()` in [`BaseAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/BaseAviary.py) for more detail
+
+
+
+
+### Obstacles
+Objects can be added to an environment using [`loadURDF` (or `loadSDF`, `loadMJCF`)](https://docs.google.com/document/d/10sXEhzFRSnvFcl3XxNGhnD4N2SedqwdAvK3dsihxVUA/edit#heading=h.sbnykoneq1me) in method `_addObstacles()`
+```
+>>> def _addObstacles(self):
+>>>     ...
+>>>     p.loadURDF("sphere2.urdf", [0,0,0], p.getQuaternionFromEuler([0,0,0]), physicsClientId=self.CLIENT)
+```
 
 
 
@@ -312,15 +359,34 @@ Class [`Logger`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gy
 
 
 
-## Ongoing Development (Late September 2020)
-- Downwash force field in `BaseAviary._downwash()`
-- ROS wrapper node(s)
+## ROS2 Python Wrapper
+Workspace [`ros2`](https://github.com/JacopoPan/gym-pybullet-drones/tree/master/ros2) contains two [ROS2 Foxy Fitzroy](https://index.ros.org/doc/ros2/Installation/Foxy/) Python nodes
+- [`AviaryWrapper`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/ros2/src/ros2_gym_pybullet_drones/ros2_gym_pybullet_drones/aviary_wrapper.py) is a wrapper node for a single-drone [`CtrlAviary`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/gym_pybullet_drones/envs/CtrlAviary.py) environment
+- [`RandomControl`](https://github.com/JacopoPan/gym-pybullet-drones/blob/master/ros2/src/ros2_gym_pybullet_drones/ros2_gym_pybullet_drones/random_control.py) reads `AviaryWrapper`'s `obs` topic and publishes random RPMs on topic `action`
+
+### Use
+With ROS2 installed (on either macOS or Ubuntu, edit `ros2_and_pkg_setups.(zsh/bash)` accordingly), run
+```
+$ cd gym-pybullet-drones/ros2/
+$ conda activate myenv                      # If using a conda environment
+$ source ros2_and_pkg_setups.zsh            # On macOS, on Ubuntu use $ source ros2_and_pkg_setups.bash
+$ colcon build --packages-select ros2_gym_pybullet_drones
+$ source ros2_and_pkg_setups.zsh            # On macOS, on Ubuntu use $ source ros2_and_pkg_setups.bash
+$ ros2 run ros2_gym_pybullet_drones aviary_wrapper
+```
+In a new terminal terminal, run
+```
+$ cd gym-pybullet-drones/ros2/
+$ conda activate myenv                      # If using a conda environment
+$ source ros2_and_pkg_setups.zsh            # On macOS, on Ubuntu use $ source ros2_and_pkg_setups.bash
+$ ros2 run ros2_gym_pybullet_drones random_control
+```
 
 
 
 
 ## Citation
-If you wish, please refer to this work as
+If you wish, please cite this work as
 ```
 @MISC{gym-pybullet-drones2020,
     author = {Panerati, Jacopo and Zheng, Hehui and Zhou, SiQi and Xu, James and Prorok, Amanda and Sch\"{o}llig, Angela P.},
@@ -342,6 +408,13 @@ If you wish, please refer to this work as
 - Guanya Shi, Xichen Shi, Michael O’Connell, Rose Yu, Kamyar Azizzadenesheli, Animashree Anandkumar, Yisong Yue, and Soon-Jo Chung (2019)
 [*Neural Lander: Stable Drone Landing Control Using Learned Dynamics*](https://arxiv.org/pdf/1811.08027.pdf)
 - Yunlong Song, Selim Naji, Elia Kaufmann, Antonio Loquercio, and Davide Scaramuzza (2020) [*Flightmare: A Flexible Quadrotor Simulator*](https://arxiv.org/pdf/2009.00563.pdf)
+
+
+
+
+## Bonus GIF for Scrolling this Far
+
+<img src="files/readme_images/2020.gif" alt="formation flight" width="360"> <img src="files/readme_images/2020.png" alt="control info" width="450">
 
 
 

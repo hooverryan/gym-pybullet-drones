@@ -15,14 +15,25 @@ register(
     entry_point='gym_pybullet_drones.envs:VisionCtrlAviary',
 )
 
+
+
+
 register(
-    id='rl-takeoff-aviary-v0',
-    entry_point='gym_pybullet_drones.envs:RLTakeoffAviary',
+    id='takeoff-aviary-v0',
+    entry_point='gym_pybullet_drones.envs.single_agent_rl:TakeoffAviary',
+)
+
+
+
+
+register(
+    id='flock-aviary-v0',
+    entry_point='gym_pybullet_drones.envs.multi_agent_rl:FlockAviary',
 )
 
 register(
-    id='marl-flock-aviary-v0',
-    entry_point='gym_pybullet_drones.envs:MARLFlockAviary',
+    id='norm-dyn-ctrl-aviary-v0',
+    entry_point='gym_pybullet_drones.envs.multi_agent_rl:NormDynCtrlAviary',
 )
 
 
