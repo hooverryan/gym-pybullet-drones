@@ -1,6 +1,8 @@
 import numpy as np
 import time
 import pybullet as p
+import pybullet_data
+import os
 from gym import error, spaces, utils
 
 from gym_pybullet_drones.envs.BaseAviary import DroneModel, Physics, BaseAviary
@@ -27,14 +29,14 @@ class RLCrazyFlieAviary(BaseAviary):
     #### - record (bool)                    whether to save a video of the simulation ##################
     #### - obstacles (bool)                 whether to add obstacles to the simulation #################
     ####################################################################################################
-    def __init__(self, drone_model: DroneModel=DroneModel.CF2X, num_drones: int=1, \
-                        visibility_radius: float=np.inf, initial_xyzs=None, initial_rpys=None, \
-                        physics: Physics=Physics.PYB_DRAG, freq: int=200, aggregate_phy_steps: int=1, \
-                        gui=False, record=False, obstacles=False):
+    def __init__(self, drone_model: DroneModel=DroneModel.CF2X, num_drones: int=1,
+                        neighbourhood_radius: float=np.inf, initial_xyzs=None, initial_rpys=None,
+                        physics: Physics=Physics.PYB_DRAG, freq: int=200, aggregate_phy_steps: int=1,
+                        gui=False, record=False, obstacles=False, user_debug_gui=True):
         if num_drones!=1: print("[ERROR] in RLTakeoffAviary.__init__(), RLTakeoffAviary only accepts num_drones=1" ); exit()
-        super().__init__(drone_model=drone_model, visibility_radius=visibility_radius, \
-            initial_xyzs=initial_xyzs, initial_rpys=initial_rpys, physics=physics, freq=freq, aggregate_phy_steps=aggregate_phy_steps, \
-            gui=gui, record=record, obstacles=obstacles) 
+        super().__init__(drone_model=drone_model, neighbourhood_radius=neighbourhood_radius,
+            initial_xyzs=initial_xyzs, initial_rpys=initial_rpys, physics=physics, freq=freq, aggregate_phy_steps=aggregate_phy_steps,
+            gui=gui, record=record, obstacles=obstacles, user_debug_gui=user_debug_gui) 
             
         self.geoFenceMax = 0.99
         
@@ -114,7 +116,7 @@ class RLCrazyFlieAviary(BaseAviary):
     #### - obs (20,) array                  for its content see _observationSpace() ####################
     ####################################################################################################
     def _computeObs(self):
-        droneState = self._getDroneState(0)
+        droneState = self._getDroneStateVector(0)
         droneState = np.hstack([droneState[0:3],droneState[7:20]])
         droneState.reshape(16,)        
         return self._clipAndNormalizeState(droneState)
@@ -129,7 +131,7 @@ class RLCrazyFlieAviary(BaseAviary):
     #### - clipped_action ((4,1) array)     clipped RPMs commanded to the 4 motors of the drone ########
     ####################################################################################################
     def _preprocessAction(self, action):
-        rpm = self._normActionToRPM(action)
+        rpm = self._normalizedActionToRPM(action)
         return np.clip(np.array(rpm), 0, self.MAX_RPM)
 
     ####################################################################################################
