@@ -20,7 +20,7 @@ class DroneModel(Enum):
     CF2X = 0                 # Bitcraze Craziflie 2.0 in the X configuration
     CF2P = 1                 # Bitcraze Craziflie 2.0 in the + configuration
     HB = 2                   # Generic quadrotor (with AscTec Hummingbird inertial properties)
-
+    MAMBO = 3                # Parrot Mambo quadrotor
     #### String representation of DroneModel ###########################################################
     def __str__(self): return self.name
 
@@ -35,7 +35,7 @@ class Physics(Enum):
     PYB_DRAG = 3             # PyBullet physics update with drag
     PYB_DW = 4               # PyBullet physics update with downwash
     PYB_GND_DRAG_DW = 5      # PyBullet physics update with ground effect, drag, and downwash
-
+    PYB_WIND = 6             # PyBullet physics update with drag and wind
     #### String representation of Physics ##############################################################
     def __str__(self): return self.name
 
@@ -76,7 +76,7 @@ class BaseAviary(gym.Env):
     def __init__(self, drone_model: DroneModel=DroneModel.CF2X, num_drones: int=1,
                     neighbourhood_radius: float=np.inf, initial_xyzs=None, initial_rpys=None,
                     physics: Physics=Physics.PYB, freq: int=240, aggregate_phy_steps: int=1,
-                    gui=False, record=False, obstacles=False, user_debug_gui=True):
+                    gui=False, record=False, obstacles=False, maxWindSpeed=8.0, user_debug_gui=True):
         #### Constants #####################################################################################
         self.G = 9.8; self.RAD2DEG = 180/np.pi; self.DEG2RAD = np.pi/180
         self.SIM_FREQ = freq; self.TIMESTEP = 1./self.SIM_FREQ; self.AGGR_PHY_STEPS = aggregate_phy_steps
@@ -88,6 +88,7 @@ class BaseAviary(gym.Env):
         if self.DRONE_MODEL==DroneModel.CF2X: self.URDF = "cf2x.urdf"
         elif self.DRONE_MODEL==DroneModel.CF2P: self.URDF = "cf2p.urdf"
         elif self.DRONE_MODEL==DroneModel.HB: self.URDF = "hb.urdf"
+        elif self.DRONE_MODEL==DroneModel.MAMBO: self.URDF = "mambo.urdf"
         #### Load the drone properties from the .urdf file #################################################
         self.M, self.L, self.THRUST2WEIGHT_RATIO, self.J, self.J_INV, self.KF, self.KM, self.COLLISION_H, self.COLLISION_R, self.COLLISION_Z_OFFSET, self.MAX_SPEED_KMH, self.GND_EFF_COEFF, self.PROP_RADIUS, self.DRAG_COEFF, self.DW_COEFF_1, self.DW_COEFF_2, self.DW_COEFF_3 = self._parseURDFParameters()
         print("[INFO] BaseAviary.__init__() loaded parameters from the drone's .urdf:\n[INFO] m {:f}, L {:f},\n[INFO] ixx {:f}, iyy {:f}, izz {:f},\n[INFO] kf {:f}, km {:f},\n[INFO] t2w {:f}, max_speed_kmh {:f},\n[INFO] gnd_eff_coeff {:f}, prop_radius {:f},\n[INFO] drag_xy_coeff {:f}, drag_z_coeff {:f},\n[INFO] dw_coeff_1 {:f}, dw_coeff_2 {:f}, dw_coeff_3 {:f}".format(
@@ -97,6 +98,7 @@ class BaseAviary(gym.Env):
         self.MAX_RPM = np.sqrt((self.THRUST2WEIGHT_RATIO*self.GRAVITY)/(4*self.KF)); self.MAX_THRUST = (4*self.KF*self.MAX_RPM**2)
         self.MAX_XY_TORQUE = (self.L*self.KF*self.MAX_RPM**2); self.MAX_Z_TORQUE = (2*self.KM*self.MAX_RPM**2)
         self.GND_EFF_H_CLIP = 0.25 * self.PROP_RADIUS * np.sqrt( (15 * self.MAX_RPM**2 * self.KF * self.GND_EFF_COEFF) / self.MAX_THRUST )
+        self.MAXWINDSPEED = maxWindSpeed
         #### Connect to PyBullet ###########################################################################
         if self.GUI:
             #### With debug GUI ################################################################################
@@ -189,7 +191,7 @@ class BaseAviary(gym.Env):
         #### Repeat for as many as the aggregate physics steps/dynamics updates ############################
         for _ in range(self.AGGR_PHY_STEPS):
             #### Re-update and store the drones kinematic info to use DYN or compute the aerodynamics effects ##
-            if self.AGGR_PHY_STEPS>1 and self.PHYSICS in [Physics.DYN, Physics.PYB_GND, Physics.PYB_DRAG, Physics.PYB_DW, Physics.PYB_GND_DRAG_DW]:
+            if self.AGGR_PHY_STEPS>1 and self.PHYSICS in [Physics.DYN, Physics.PYB_GND, Physics.PYB_DRAG, Physics.PYB_WIND, Physics.PYB_DW, Physics.PYB_GND_DRAG_DW]: 
                 self._updateAndStoreKinematicInformation()
             #### Step the simulation using the desired physics update ##########################################
             for i in range (self.NUM_DRONES):
@@ -199,10 +201,11 @@ class BaseAviary(gym.Env):
                 elif self.PHYSICS==Physics.PYB_DRAG: self._physics(clipped_action[i,:], i); self._drag(self.last_clipped_action[i,:], i)
                 elif self.PHYSICS==Physics.PYB_DW: self._physics(clipped_action[i,:], i); self._downwash(i)
                 elif self.PHYSICS==Physics.PYB_GND_DRAG_DW: self._physics(clipped_action[i,:], i); self._groundEffect(clipped_action[i,:], i); self._drag(self.last_clipped_action[i,:], i); self._downwash(i)
+                elif self.PHYSICS==Physics.PYB_WIND: self._physics(clipped_action[i,:], i); self._dragWithWind(self.last_clipped_action[i,:], i)
             #### Let PyBullet compute the new state, unless using Physics.DYN ##################################
             if self.PHYSICS!=Physics.DYN: p.stepSimulation(physicsClientId=self.CLIENT)
             #### Save the last applied action to compute drag in the next step #################################
-            if self.PHYSICS in [Physics.PYB_DRAG, Physics.PYB_GND_DRAG_DW]: self.last_clipped_action = clipped_action
+            if self.PHYSICS in [Physics.PYB_DRAG, Physics.PYB_GND_DRAG_DW, Physics.PYB_WIND]: self.last_clipped_action = clipped_action
         #### Update and store the drones kinematic information #############################################
         self._updateAndStoreKinematicInformation()
         #### Prepare the return values #####################################################################
@@ -408,7 +411,23 @@ class BaseAviary(gym.Env):
         #### Simple draft model applied to the base/center of mass #########################################
         drag_factors = -1 * self.DRAG_COEFF * np.sum(np.array(2*np.pi*rpm/60))
         drag = np.dot(base_rot, drag_factors*np.array(self.vel[nth_drone,:]))
-        p.applyExternalForce(self.DRONE_IDS[nth_drone], 4, forceObj=drag, posObj=[0,0,0], flags=p.LINK_FRAME, physicsClientId=self.CLIENT)
+        p.applyExternalForce(self.DRONE_IDS[nth_drone], 4, forceObj=drag, posObj=[0,0,0], flags=p.LINK_FRAME, physicsClientId=self.CLIENT) 
+        
+    ####################################################################################################
+    #### PyBullet implementation of drag with Wind, from (Forster, 2015) ###############################
+    ####################################################################################################
+    #### Arguments #####################################################################################
+    #### - rpm ((4,1) array)                RPM values of the 4 motors #################################
+    #### - nth_drone (int)                  order position of the drone in list self.DRONE_IDS #########
+    ####################################################################################################
+    def _dragWithWind(self, rpm, nth_drone):
+        #### Rotation matrix of the base ###################################################################        
+        base_rot = np.array(p.getMatrixFromQuaternion(self.quat[nth_drone,:])).reshape(3,3)
+        #### Simple draft model applied to the base/center of mass #########################################
+        drag_factors = -1 * self.DRAG_COEFF * np.sum(np.array(2*np.pi*rpm/60))
+        velocityInWind = np.array(self.vel[nth_drone,:]) - self.wind[:]
+        drag = np.dot(base_rot, drag_factors*velocityInWind)
+        p.applyExternalForce(self.DRONE_IDS[nth_drone], 4, forceObj=drag, posObj=[0,0,0], flags=p.LINK_FRAME, physicsClientId=self.CLIENT) 
 
     ####################################################################################################
     #### PyBullet implementation of ground effect, SiQi Zhou's modelling ###############################
