@@ -1,0 +1,2 @@
+*.zip -crlf -diff -merge
+*.pkl -crlf -diff -merge
