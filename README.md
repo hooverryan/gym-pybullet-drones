@@ -10,7 +10,13 @@
 - Suggestions and corrections are very welcome in the form of [issues](https://github.com/JacopoPan/gym-pybullet-drones/issues) and [pull requests](https://github.com/JacopoPan/gym-pybullet-drones/pulls), respectively
 
 
-
+## TODO
+This is the initial list of items we have to address to in order for this package to be more applicable to our project.
+- [ ] Add physics modules that calculate forces and torques related to the tether
+- [ ] Add the Team Blacksheep drone parameters into a new URDF file in the asset file
+- [ ] Add the Team Blacksheep drone to the enumeration inside the BaseAviary class
+- [ ] Simulate an IMU with and without noise to be included in the observations
+- [ ] Add state estimation based on the IMU
 
 ## Overview
 
