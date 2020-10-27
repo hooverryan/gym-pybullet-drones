@@ -3,6 +3,7 @@ import time
 import pybullet as p
 import pybullet_data
 import os
+from scipy.optimize import nnls
 from gym import error, spaces, utils
 
 from gym_pybullet_drones.envs.BaseAviary import DroneModel, Physics, BaseAviary
@@ -35,6 +36,9 @@ class RLCrazyFlieAviary(BaseAviary):
                         gui=False, record=False, obstacles=False, user_debug_gui=True, PID_Control=False,
                         target_pos=None):
         if num_drones!=1: print("[ERROR] in RLTakeoffAviary.__init__(), RLTakeoffAviary only accepts num_drones=1" ); exit()
+
+        self.usePID = PID_Control
+        
         super().__init__(drone_model=drone_model, neighbourhood_radius=neighbourhood_radius,
             initial_xyzs=initial_xyzs, initial_rpys=initial_rpys, physics=physics, freq=freq, aggregate_phy_steps=aggregate_phy_steps,
             gui=gui, record=record, obstacles=obstacles, user_debug_gui=user_debug_gui) 
@@ -45,11 +49,11 @@ class RLCrazyFlieAviary(BaseAviary):
             self.target_pos=target_pos
         else:
             print("[ERRROR] invalid target position shape in RLCrazyFlieAviary.__init__()")
-        self.useControl = PID_Control
+
         self.A = np.array([ [1, 1, 1, 1], [0, 1, 0, -1], [-1, 0, 1, 0], [-1, 1, -1, 1] ]); self.INV_A = np.linalg.inv(self.A)
         self.B_COEFF = np.array([1/self.KF, 1/(self.KF*self.L), 1/(self.KF*self.L), 1/self.KM])
+        self.MAX_ROLL_PITCH = np.pi/6
 
-            
         self.geoFenceMax = 0.99
         
         self.penaltyPosition = 1
@@ -108,8 +112,8 @@ class RLCrazyFlieAviary(BaseAviary):
     #### Return the action space of the environment, a Box(4,) #########################################
     ####################################################################################################
     def _actionSpace(self):
-        if self.useControl:
-            #### PID Gains     ######## KPx   KPy   KPz   KIx   KIy   Kiz   KDx   KDy   KDz   KPr   KPp   KPy   KIr   KIp   KIy   KDr   KDp   KDy
+        if self.usePID:
+            #### PID Gain vector ###### KPx   KPy   KPz   KIx   KIy   Kiz   KDx   KDy   KDz   KPr   KPp   KPy   KIr   KIp   KIy   KDr   KDp   KDy
             act_lower_bound = np.array([ 0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0,    0])
             act_upper_bound = np.array([ 1,    1,    1,    1,    1,    1,    1,    1,    1,    1,    1,    1,    1,    1,    1,    1,    1,    1])
         else:
@@ -135,8 +139,8 @@ class RLCrazyFlieAviary(BaseAviary):
     ####################################################################################################
     def _computeObs(self):
         droneState = self._getDroneStateVector(0)
-        droneState = np.hstack([droneState[0:3],droneState[7:20]])
-        droneState.reshape(16,)        
+        droneState = np.hstack([droneState[0:3],droneState[7:16]])
+        droneState.reshape(np.shape(self.observation_space)[0],)        
         return self._clipAndNormalizeState(droneState)
 
     ####################################################################################################
@@ -149,7 +153,7 @@ class RLCrazyFlieAviary(BaseAviary):
     #### - clipped_action ((4,1) array)     clipped RPMs commanded to the 4 motors of the drone ########
     ####################################################################################################
     def _preprocessAction(self, action):
-        if self.useControl:
+        if self.usePID:
             rpm = self._caluclatePIDControlSignal(action)
         else:
             rpm = self._normalizedActionToRPM(action)
@@ -192,7 +196,6 @@ class RLCrazyFlieAviary(BaseAviary):
             rewardGoal = self.rewardGoal
         else:
             rewardGoal = 0
-            
         
         return rewardGoal - penaltyPosition - penaltyAngle - penaltyVelocity - penaltyAngularVelocity
         -penaltyFlag
@@ -246,7 +249,7 @@ class RLCrazyFlieAviary(BaseAviary):
         normalized_vel = clipped_vel/5
         normalized_ang_vel_rp = clipped_ang_vel_rp/(10*np.pi)
         normalized_ang_vel_y = clipped_ang_vel_y/(20*np.pi)
-        return np.hstack([normalized_pos, normalized_rp, normalized_y, normalized_vel, normalized_ang_vel_rp, normalized_ang_vel_y, state[12:16] ]).reshape(16,)
+        return np.hstack([normalized_pos, normalized_rp, normalized_y, normalized_vel, normalized_ang_vel_rp, normalized_ang_vel_y, state[12:16] ]).reshape(np.shape(self.observation_space)[0],)
 
     ####################################################################################################
     #### Print a warning if any of the 20 values in a state vector is out of the normalization range ###
@@ -267,7 +270,7 @@ class RLCrazyFlieAviary(BaseAviary):
     #### Returns #######################################################################################
     #### - rpm ((4,1) array)                RPM values to apply to the 4 motors ########################
     ####################################################################################################
-    def _caluclatePIDControlSignal(self, gains)
+    def _caluclatePIDControlSignal(self, gains):
 
         droneState = self._getDroneStateVector(0)
         cur_pos = droneState[0:3]
@@ -296,11 +299,11 @@ class RLCrazyFlieAviary(BaseAviary):
     ####################################################################################################
     def _simplePIDPositionControl(self, cur_pos, cur_quat, K):
         pos_e = self.target_pos - np.array(cur_pos).reshape(3)
-        d_pos_e = (pos_e - self.last_pos_e) * self.freq
+        d_pos_e = (pos_e - self.last_pos_e) * self.SIM_FREQ
         self.last_pos_e = pos_e
-        self.integral_pos_e = self.integral_pos_e + pos_e/self.freq
+        self.integral_pos_e = self.integral_pos_e + pos_e/self.SIM_FREQ
         #### PID target thrust #############################################################################
-        target_force = np.array([0,0,self.GRAVITY]) + np.multiply(K[0:3],pos_e) + np.multiply(K[3:6],self.integral_pos_e) + np.multiply(K[6:9],d_pos_e)
+        target_force = np.array([0,0,self.GRAVITY]) + np.multiply(K[0:3]/100,pos_e) + np.multiply(K[3:6],self.integral_pos_e) + np.multiply(K[6:9],d_pos_e)
         target_rpy = np.zeros(3)
         sign_z =  np.sign(target_force[2])
         if sign_z==0: sign_z = 1
@@ -331,11 +334,11 @@ class RLCrazyFlieAviary(BaseAviary):
         rpy_e = target_rpy - np.array(cur_rpy).reshape(3,)
         if rpy_e[2]>np.pi: rpy_e[2] = rpy_e[2] - 2*np.pi
         if rpy_e[2]<-np.pi: rpy_e[2] = rpy_e[2] + 2*np.pi
-        d_rpy_e = (rpy_e - self.last_rpy_e) * self.freq
+        d_rpy_e = (rpy_e - self.last_rpy_e) * self.SIM_FREQ
         self.last_rpy_e = rpy_e
-        self.integral_rpy_e = self.integral_rpy_e + rpy_e/self.freq
+        self.integral_rpy_e = self.integral_rpy_e + rpy_e/self.SIM_FREQ
         #### PID target torques ############################################################################
-        target_torques = np.multiply(K[0:3],rpy_e) + np.multiply(L[3:6],self.integral_rpy_e) + np.multiply(K[6:9],d_rpy_e)
+        target_torques = np.multiply(K[0:3],rpy_e) + np.multiply(K[3:6]/100,self.integral_rpy_e) + np.multiply(K[6:9],d_rpy_e)
         return self._nnlsRPM(thrust, target_torques[0], target_torques[1], target_torques[2])
 
     ####################################################################################################
@@ -355,23 +358,23 @@ class RLCrazyFlieAviary(BaseAviary):
         #### Check the feasibility of thrust and torques ###################################################
         if thrust<0 or thrust>self.MAX_THRUST:
             if new_line: print(); new_line = False
-            print("[WARNING] ctrl it", self.control_counter, "in RLCrazyFlieAviary._nnlsRPM(), unfeasible thrust {:.2f} outside range [0, {:.2f}]".format(thrust, self.MAX_THRUST))
+            print("[WARNING] ctrl it", self.step_counter, "in RLCrazyFlieAviary._nnlsRPM(), unfeasible thrust {:.2f} outside range [0, {:.2f}]".format(thrust, self.MAX_THRUST))
         if np.abs(x_torque)>self.MAX_XY_TORQUE:
             if new_line: print(); new_line = False
-            print("[WARNING] ctrl it", self.control_counter, "in RLCrazyFlieAviary._nnlsRPM(), unfeasible roll torque {:.2f} outside range [{:.2f}, {:.2f}]".format(x_torque, -self.MAX_XY_TORQUE, self.MAX_XY_TORQUE))
+            print("[WARNING] ctrl it", self.step_counter, "in RLCrazyFlieAviary._nnlsRPM(), unfeasible roll torque {:.2f} outside range [{:.2f}, {:.2f}]".format(x_torque, -self.MAX_XY_TORQUE, self.MAX_XY_TORQUE))
         if np.abs(y_torque)>self.MAX_XY_TORQUE:
             if new_line: print(); new_line = False
-            print("[WARNING] ctrl it", self.control_counter, "in RLCrazyFlieAviary._nnlsRPM(), unfeasible pitch torque {:.2f} outside range [{:.2f}, {:.2f}]".format(y_torque, -self.MAX_XY_TORQUE, self.MAX_XY_TORQUE))
+            print("[WARNING] ctrl it", self.step_counter, "in RLCrazyFlieAviary._nnlsRPM(), unfeasible pitch torque {:.2f} outside range [{:.2f}, {:.2f}]".format(y_torque, -self.MAX_XY_TORQUE, self.MAX_XY_TORQUE))
         if np.abs(z_torque)>self.MAX_Z_TORQUE:
             if new_line: print(); new_line = False
-            print("[WARNING] ctrl it", self.control_counter, "in RLCrazyFlieAviary._nnlsRPM(), unfeasible yaw torque {:.2f} outside range [{:.2f}, {:.2f}]".format(z_torque, -self.MAX_Z_TORQUE, self.MAX_Z_TORQUE))
+            print("[WARNING] ctrl it", self.step_counter, "in RLCrazyFlieAviary._nnlsRPM(), unfeasible yaw torque {:.2f} outside range [{:.2f}, {:.2f}]".format(z_torque, -self.MAX_Z_TORQUE, self.MAX_Z_TORQUE))
         B = np.multiply(np.array([thrust, x_torque, y_torque, z_torque]), self.B_COEFF)
         sq_rpm = np.dot(self.INV_A, B)
         #### Use NNLS if any of the desired angular velocities is negative #################################
         if np.min(sq_rpm)<0:
             sol, res = nnls(self.A, B, maxiter=3*self.A.shape[1])
             if new_line: print(); new_line = False
-            print("[WARNING] ctrl it", self.control_counter, "in RLCrazyFlieAviary._nnlsRPM(), unfeasible squared rotor speeds, using NNLS")
+            print("[WARNING] ctrl it", self.step_counter, "in RLCrazyFlieAviary._nnlsRPM(), unfeasible squared rotor speeds, using NNLS")
             print("Negative sq. rotor speeds:\t [{:.2f}, {:.2f}, {:.2f}, {:.2f}]".format(sq_rpm[0], sq_rpm[1], sq_rpm[2], sq_rpm[3]),
                     "\t\tNormalized: [{:.2f}, {:.2f}, {:.2f}, {:.2f}]".format(sq_rpm[0]/np.linalg.norm(sq_rpm), sq_rpm[1]/np.linalg.norm(sq_rpm), sq_rpm[2]/np.linalg.norm(sq_rpm), sq_rpm[3]/np.linalg.norm(sq_rpm)))
             print("NNLS:\t\t\t\t [{:.2f}, {:.2f}, {:.2f}, {:.2f}]".format(sol[0], sol[1], sol[2], sol[3]),
