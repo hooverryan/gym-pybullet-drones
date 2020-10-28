@@ -76,7 +76,8 @@ class BaseAviary(gym.Env):
     def __init__(self, drone_model: DroneModel=DroneModel.CF2X, num_drones: int=1,
                     neighbourhood_radius: float=np.inf, initial_xyzs=None, initial_rpys=None,
                     physics: Physics=Physics.PYB, freq: int=240, aggregate_phy_steps: int=1,
-                    gui=False, record=False, obstacles=False, maxWindSpeed=8.0, user_debug_gui=True):
+                    gui=False, record=False, obstacles=False, maxWindSpeed=8.0, user_debug_gui=True,
+                    run_name: str=''):
         #### Constants #####################################################################################
         self.G = 9.8; self.RAD2DEG = 180/np.pi; self.DEG2RAD = np.pi/180
         self.SIM_FREQ = freq; self.TIMESTEP = 1./self.SIM_FREQ; self.AGGR_PHY_STEPS = aggregate_phy_steps
@@ -135,6 +136,7 @@ class BaseAviary(gym.Env):
         #### Update and store the drones kinematic information #############################################
         self._updateAndStoreKinematicInformation()
         #### Start video recording #########################################################################
+        self.run_name = run_name
         self._startVideoRecording()
 
     ####################################################################################################
@@ -186,8 +188,8 @@ class BaseAviary(gym.Env):
             for i in range(4): self.gui_input[i] = p.readUserDebugParameter(int(self.SLIDERS[i]), physicsClientId=self.CLIENT)
             clipped_action = np.tile(self.gui_input,(self.NUM_DRONES,1))
             if self.step_counter%(self.SIM_FREQ/2)==0: self.GUI_INPUT_TEXT = [ p.addUserDebugText("Using GUI RPM", textPosition=[0,0,0], textColorRGB=[1,0,0], lifeTime=1, textSize=2, parentObjectUniqueId=self.DRONE_IDS[i], parentLinkIndex=-1, replaceItemUniqueId=int(self.GUI_INPUT_TEXT[i]), physicsClientId=self.CLIENT) for i in range(self.NUM_DRONES) ]
-        #### Save, preprocess, and clip the action to the maximum RPM ######################################
-        else: self._saveLastAction(action); clipped_action = np.reshape(self._preprocessAction(action), (self.NUM_DRONES,4))
+        #### Preprocess, clip, and save the action to the maximum RPM ######################################
+        else: clipped_action = np.reshape(self._preprocessAction(action), (self.NUM_DRONES,4)); self._saveLastAction(clipped_action)
         #### Repeat for as many as the aggregate physics steps/dynamics updates ############################
         for _ in range(self.AGGR_PHY_STEPS):
             #### Re-update and store the drones kinematic info to use DYN or compute the aerodynamics effects ##
@@ -267,6 +269,9 @@ class BaseAviary(gym.Env):
         #### Initialize the drones kinemaatic information ##################################################
         self.pos = np.zeros((self.NUM_DRONES,3)); self.quat = np.zeros((self.NUM_DRONES,4)); self.rpy = np.zeros((self.NUM_DRONES,3))
         self.vel = np.zeros((self.NUM_DRONES,3)); self.ang_v = np.zeros((self.NUM_DRONES,3))
+        #### Initialize wind speed and heading information #################################################
+        windHeading = np.random.rand()*2*np.pi
+        self.wind=np.random.rand()*self.MAXWINDSPEED*np.array([-np.cos(windHeading),np.sin(windHeading),0])
         #### Set PyBullet's parameters #####################################################################
         p.setGravity(0, 0, -self.G, physicsClientId=self.CLIENT)
         p.setRealTimeSimulation(0, physicsClientId=self.CLIENT)
@@ -295,8 +300,8 @@ class BaseAviary(gym.Env):
     #### Start saving the video output as .mp4, if GUI is True,  or .png, otherwise ####################
     ####################################################################################################
     def _startVideoRecording(self):
-        if self.RECORD and self.GUI: self.VIDEO_ID = p.startStateLogging(loggingType=p.STATE_LOGGING_VIDEO_MP4, fileName=os.path.dirname(os.path.abspath(__file__))+"/../../files/video-"+datetime.now().strftime("%m.%d.%Y_%H.%M.%S")+".mp4", physicsClientId=self.CLIENT)
-        if self.RECORD and not self.GUI: self.FRAME_NUM = 0; self.IMG_PATH = os.path.dirname(os.path.abspath(__file__))+"/../../files/video-"+datetime.now().strftime("%m.%d.%Y_%H.%M.%S")+"/"; os.makedirs(os.path.dirname(self.IMG_PATH), exist_ok=True)
+        if self.RECORD and self.GUI: self.VIDEO_ID = p.startStateLogging(loggingType=p.STATE_LOGGING_VIDEO_MP4, fileName=os.path.dirname(os.path.abspath(__file__))+"/../../files/"+self.run_name+"-video-"+datetime.now().strftime("%m.%d.%Y_%H.%M.%S")+".mp4", physicsClientId=self.CLIENT)
+        if self.RECORD and not self.GUI: self.FRAME_NUM = 0; self.IMG_PATH = os.path.dirname(os.path.abspath(__file__))+"/../../files/"+self.run_name+"-video-"+datetime.now().strftime("%m.%d.%Y_%H.%M.%S")+"/"; os.makedirs(os.path.dirname(self.IMG_PATH), exist_ok=True)
 
     ####################################################################################################
     #### Return the state vector of the nth drone ######################################################
