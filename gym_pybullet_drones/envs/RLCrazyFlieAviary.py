@@ -30,18 +30,17 @@ class RLCrazyFlieAviary(BaseAviary):
     #### - record (bool)                    whether to save a video of the simulation ##################
     #### - obstacles (bool)                 whether to add obstacles to the simulation #################
     ####################################################################################################
-    def __init__(self, drone_model: DroneModel=DroneModel.CF2X, num_drones: int=1,
+    def __init__(self, drone_model: DroneModel=DroneModel.CF2X,
                         neighbourhood_radius: float=np.inf, initial_xyzs=None, initial_rpys=None,
                         physics: Physics=Physics.PYB_DRAG, freq: int=200, aggregate_phy_steps: int=1,
                         gui=False, record=False, obstacles=False, user_debug_gui=True, PID_Control=False,
-                        target_pos=None):
-        if num_drones!=1: print("[ERROR] in RLTakeoffAviary.__init__(), RLTakeoffAviary only accepts num_drones=1" ); exit()
+                        target_pos=None, run_name: str=''):
 
         self.usePID = PID_Control
         
         super().__init__(drone_model=drone_model, neighbourhood_radius=neighbourhood_radius,
             initial_xyzs=initial_xyzs, initial_rpys=initial_rpys, physics=physics, freq=freq, aggregate_phy_steps=aggregate_phy_steps,
-            gui=gui, record=record, obstacles=obstacles, user_debug_gui=user_debug_gui) 
+            gui=gui, record=record, obstacles=obstacles, user_debug_gui=user_debug_gui, run_name=run_name) 
         
         if target_pos is None:
             self.target_pos = np.array([1,1,0.5])
@@ -85,6 +84,7 @@ class RLCrazyFlieAviary(BaseAviary):
 
         self.quat = np.zeros((self.NUM_DRONES,4)); self.rpy = np.zeros((self.NUM_DRONES,3))
         self.vel = np.zeros((self.NUM_DRONES,3)); self.ang_v = np.zeros((self.NUM_DRONES,3))
+
         #### Initialize wind speed and heading information #################################################
         windHeading = np.random.rand()*2*np.pi
         self.wind=np.random.rand()*self.MAXWINDSPEED*np.array([-np.cos(windHeading),np.sin(windHeading),0])
