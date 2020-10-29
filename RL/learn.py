@@ -13,13 +13,19 @@ from stable_baselines3.common.noise import NormalActionNoise, OrnsteinUhlenbeckA
 from stable_baselines3.ddpg.policies import MlpPolicy
 from stable_baselines3.common.env_checker import check_env
 
-from utils import *
+from gym_pybullet_drones.envs.BaseAviary import DroneModel, Physics
 from gym_pybullet_drones.envs.RLCrazyFlieAviary import RLCrazyFlieAviary
+
+def str2bool(val):
+    if isinstance(val, bool): return val
+    elif val.lower() in ('yes', 'true', 't', 'y', '1'): return True
+    elif val.lower() in ('no', 'false', 'f', 'n', '0'): return False
+    else: raise print("[ERROR] in str2bool(), a Boolean value is expected")
 
 if __name__ == "__main__":
 
     #### Define and parse (optional) arguments for the script ##########################################
-    parser = argparse.ArgumentParser(description='Helix flight script using CtrlAviary or VisionCtrlAviary and DSLPIDControl')
+    parser = argparse.ArgumentParser(description='RL flight script using RLCrazyFlieAviary')
     parser.add_argument('--drone',              default=DroneModel.CF2X,    type=lambda model: DroneModel[model],   help='Drone model (default: CF2X)', metavar='')
     parser.add_argument('--physics',            default=Physics.PYB,        type=lambda phy: Physics[phy],          help='Physics updates (default: PYB)', metavar='')
     parser.add_argument('--PID_Control',        default=False,              type=str2bool,                          help='Whether to use a PID Control (default: False)', metavar='')
@@ -35,7 +41,7 @@ if __name__ == "__main__":
 
     #### Check the environment's spaces ################################################################
     #env = gym.make("rl-CrazyFlie-aviary-v0")
-    env = RLCrazyFlieAviary(drone_model=ARGS.drone, Physics=ARGS.physics, freq=ARGS.simulation_freq_hz,
+    env = RLCrazyFlieAviary(drone_model=ARGS.drone, physics=ARGS.physics, freq=ARGS.simulation_freq_hz,
          gui=ARGS.gui, record=False, PID_Control=ARGS.PID_Control)
     print("[INFO] Action space:", env.action_space)
     print("[INFO] Observation space:", env.observation_space)
@@ -51,15 +57,15 @@ if __name__ == "__main__":
     for i in range(ARGS.training_loops):
     
         model.learn(total_timesteps=training_timesteps)
-        model.save("ddpg"+str((i+1)*training_timesteps))
+        model.save(ARGS.run_name+str((i+1)*training_timesteps))
         model.save_replay_buffer(ARGS.run_name+str((i+1)*training_timesteps))
 
         #### Show (and record a video of) the model's performance ##########################################
-        env_test = RLCrazyFlieAviary(drone_model=ARGS.drone, Physics=ARGS.physics, freq=ARGS.simulation_freq_hz,
-            gui=ARGS.gui, record=ARGS.record_video, PID_Control=ARGS.PID_Control, run_name=ARGS.run_name)
+        env_test = RLCrazyFlieAviary(drone_model=ARGS.drone, physics=ARGS.physics, freq=ARGS.simulation_freq_hz,
+            gui=False, record=ARGS.record_video, PID_Control=ARGS.PID_Control, run_name=ARGS.run_name)
         obs = env_test.reset()
         start = time.time()
-        for i in range(ARGS.test_duration*env_test.SIM_FREQ):
+        for j in range(ARGS.test_duration*env_test.SIM_FREQ):
             action, _states = model.predict(obs, deterministic=True)
             obs, reward, done, info = env_test.step(action)
             print(i)
@@ -67,6 +73,7 @@ if __name__ == "__main__":
             print(done)
             env_test.render()
             if done: break
+        if ARGS.record_video: os.system('ffmpeg -r 24 -f image2 -s 640x480 -i '+env_test.IMG_PATH+'frame_%d.png -vcodec libx264 -crf 25  -pix_fmt yuv420p '+ARGS.run_name+str((i+1)*training_timesteps)+'.mp4')
         env_test.close()
 
     env.close()
