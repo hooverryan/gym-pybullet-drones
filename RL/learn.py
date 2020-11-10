@@ -16,11 +16,7 @@ from stable_baselines3.common.env_checker import check_env
 from gym_pybullet_drones.envs.BaseAviary import DroneModel, Physics
 from gym_pybullet_drones.envs.RLCrazyFlieAviary import RLCrazyFlieAviary
 
-def str2bool(val):
-    if isinstance(val, bool): return val
-    elif val.lower() in ('yes', 'true', 't', 'y', '1'): return True
-    elif val.lower() in ('no', 'false', 'f', 'n', '0'): return False
-    else: raise print("[ERROR] in str2bool(), a Boolean value is expected")
+from gym_pybullet_drones.utils.utils import *
 
 if __name__ == "__main__":
 

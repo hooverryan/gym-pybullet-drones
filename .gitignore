@@ -425,4 +425,6 @@ TSWLatexianTemp*
 *.zip
 *.pkl
 *.npy
-files/video*
+files/*video*
+RL/*.mp4
+RL/*.pkl

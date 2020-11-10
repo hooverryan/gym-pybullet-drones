@@ -7,6 +7,7 @@ from scipy.optimize import nnls
 from gym import error, spaces, utils
 
 from gym_pybullet_drones.envs.BaseAviary import DroneModel, Physics, BaseAviary
+from gym_pybullet_drones.utils.utils import *
 
 
 ######################################################################################################################################################
@@ -33,21 +34,21 @@ class RLCrazyFlieAviary(BaseAviary):
     def __init__(self, drone_model: DroneModel=DroneModel.CF2X,
                         neighbourhood_radius: float=np.inf, initial_xyzs=None, initial_rpys=None,
                         physics: Physics=Physics.PYB_DRAG, freq: int=200, aggregate_phy_steps: int=1,
-                        gui=False, record=False, obstacles=False, user_debug_gui=True, PID_Control=False,
-                        target_pos=None, run_name: str=''):
+                        gui=False, record=False, obstacles=False, maxWindSpeed=8.0, user_debug_gui=True,
+                        PID_Control=False, target_pos=None, run_name: str=''):
 
         self.usePID = PID_Control
         
         super().__init__(drone_model=drone_model, neighbourhood_radius=neighbourhood_radius,
             initial_xyzs=initial_xyzs, initial_rpys=initial_rpys, physics=physics, freq=freq, aggregate_phy_steps=aggregate_phy_steps,
-            gui=gui, record=record, obstacles=obstacles, user_debug_gui=user_debug_gui, run_name=run_name) 
+            gui=gui, record=record, obstacles=obstacles, maxWindSpeed=maxWindSpeed, user_debug_gui=user_debug_gui, run_name=run_name) 
         
         if target_pos is None:
-            self.target_pos = np.array([1,1,0.5])
+            self.target_pos = np.array([0,0,0.5])
         elif np.array(target_pos).shape==(1,3):
             self.target_pos=target_pos
         else:
-            print("[ERRROR] invalid target position shape in RLCrazyFlieAviary.__init__()")
+            prRed("[ERRROR] invalid target position shape in RLCrazyFlieAviary.__init__()")
 
         self.A = np.array([ [1, 1, 1, 1], [0, 1, 0, -1], [-1, 0, 1, 0], [-1, 1, -1, 1] ]); self.INV_A = np.linalg.inv(self.A)
         self.B_COEFF = np.array([1/self.KF, 1/(self.KF*self.L), 1/(self.KF*self.L), 1/self.KM])
@@ -99,7 +100,7 @@ class RLCrazyFlieAviary(BaseAviary):
         p.setAdditionalSearchPath(pybullet_data.getDataPath(), physicsClientId=self.CLIENT)
         #### Load ground plane, drone and obstacles models #################################################
         self.PLANE_ID = p.loadURDF("plane.urdf", physicsClientId=self.CLIENT)
-        self.DRONE_IDS = np.array([p.loadURDF(os.path.dirname(os.path.abspath(__file__))+"/../assets/"+self.URDF, self.INIT_XYZS[i,:], p.getQuaternionFromEuler(self.INIT_RPYS[i,:]), physicsClientId=self.CLIENT) for i in range(self.NUM_DRONES)])
+        self.DRONE_IDS = np.array([p.loadURDF(os.path.dirname(os.path.abspath(__file__))+"/../assets/"+self.URDF, self.pos[i,:], p.getQuaternionFromEuler(self.rpy[i,:]), physicsClientId=self.CLIENT) for i in range(self.NUM_DRONES)])
         for i in range(self.NUM_DRONES):
             #### Show the frame of reference of the drone, note thet it can severly slow down the GUI ##########
             if self.GUI and self.USER_DEBUG: self._showDroneLocalAxes(i)
@@ -255,11 +256,11 @@ class RLCrazyFlieAviary(BaseAviary):
     #### Print a warning if any of the 20 values in a state vector is out of the normalization range ###
     ####################################################################################################
     def _clipAndNormalizeStateWarning(self, state, clipped_pos, clipped_rp, clipped_vel, clipped_ang_vel_rp, clipped_ang_vel_y):
-        if not(clipped_pos==np.array(state[0:3])).all(): print("[WARNING] it", self.step_counter, "in RLCrazyFlieAviary._clipAndNormalizeState(), out-of-bound position [{:.2f} {:.2f} {:.2f}], consider a more conservative implementation of RLTakeoffAviary._computeDone()".format(state[0], state[1], state[2]))
-        if not(clipped_rp==np.array(state[3:5])).all(): print("[WARNING] it", self.step_counter, "in RLCrazyFlieAviary._clipAndNormalizeState(), out-of-bound roll/pitch [{:.2f} {:.2f}], consider a more conservative implementation of RLTakeoffAviary._computeDone()".format(state[3], state[4]))
-        if not(clipped_vel==np.array(state[6:9])).all(): print("[WARNING] it", self.step_counter, "in RLCrazyFlieAviary._clipAndNormalizeState(), out-of-bound velocity [{:.2f} {:.2f} {:.2f}], consider a more conservative implementation of RLTakeoffAviary._computeDone()".format(state[6], state[7], state[8]))
-        if not(clipped_ang_vel_rp==np.array(state[9:11])).all(): print("[WARNING] it", self.step_counter, "in RLCrazyFlieAviary._clipAndNormalizeState(), out-of-bound angular velocity [{:.2f} {:.2f} {:.2f}], consider a more conservative implementation of RLTakeoffAviary._computeDone()".format(state[9], state[10], state[11]))
-        if not(clipped_ang_vel_y==np.array(state[11])): print("[WARNING] it", self.step_counter, "in RLCrazyFlieAviary._clipAndNormalizeState(), out-of-bound angular velocity [{:.2f} {:.2f} {:.2f}], consider a more conservative implementation of RLTakeoffAviary._computeDone()".format(state[9], state[10], state[11]))
+        if not(clipped_pos==np.array(state[0:3])).all(): prYellow("[WARNING] at {} in RLCrazyFlieAviary._clipAndNormalizeState(), out-of-bound position [{:.2f} {:.2f} {:.2f}], consider a more conservative implementation of RLCrazyFlieAviary._computeDone()".format(self.step_counter,state[0], state[1], state[2]))
+        if not(clipped_rp==np.array(state[3:5])).all(): prYellow("[WARNING] at {} in RLCrazyFlieAviary._clipAndNormalizeState(), out-of-bound roll/pitch [{:.2f} {:.2f}], consider a more conservative implementation of RLCrazyFlieAviary._computeDone()".format(self.step_counter,state[3], state[4]))
+        if not(clipped_vel==np.array(state[6:9])).all(): prYellow("[WARNING] at {} in RLCrazyFlieAviary._clipAndNormalizeState(), out-of-bound velocity [{:.2f} {:.2f} {:.2f}], consider a more conservative implementation of RLCrazyFlieAviary._computeDone()".format(self.step_counter,state[6], state[7], state[8]))
+        if not(clipped_ang_vel_rp==np.array(state[9:11])).all(): prYellow("[WARNING] at {} in RLCrazyFlieAviary._clipAndNormalizeState(), out-of-bound angular velocity [{:.2f} {:.2f} {:.2f}], consider a more conservative implementation of RLCrazyFlieAviary._computeDone()".format(self.step_counter,state[9], state[10], state[11]))
+        if not(clipped_ang_vel_y==np.array(state[11])): prYellow("[WARNING] at {} in RLCrazyFlieAviary._clipAndNormalizeState(), out-of-bound angular velocity [{:.2f} {:.2f} {:.2f}], consider a more conservative implementation of RLCrazyFlieAviary._computeDone()".format(self.step_counter,state[9], state[10], state[11]))
 
     ####################################################################################################
     #### Compute the control action for a single drone #################################################
@@ -303,7 +304,7 @@ class RLCrazyFlieAviary(BaseAviary):
         self.last_pos_e = pos_e
         self.integral_pos_e = self.integral_pos_e + pos_e/self.SIM_FREQ
         #### PID target thrust #############################################################################
-        target_force = np.array([0,0,self.GRAVITY]) + np.multiply(K[0:3]/100,pos_e) + np.multiply(K[3:6],self.integral_pos_e) + np.multiply(K[6:9],d_pos_e)
+        target_force = np.array([0,0,self.GRAVITY]) + np.multiply(K[0:3]/2,pos_e) + np.multiply(K[3:6]/1000,self.integral_pos_e) + np.multiply(K[6:9]/2,d_pos_e)
         target_rpy = np.zeros(3)
         sign_z =  np.sign(target_force[2])
         if sign_z==0: sign_z = 1
@@ -338,7 +339,7 @@ class RLCrazyFlieAviary(BaseAviary):
         self.last_rpy_e = rpy_e
         self.integral_rpy_e = self.integral_rpy_e + rpy_e/self.SIM_FREQ
         #### PID target torques ############################################################################
-        target_torques = np.multiply(K[0:3],rpy_e) + np.multiply(K[3:6]/100,self.integral_rpy_e) + np.multiply(K[6:9],d_rpy_e)
+        target_torques = np.multiply(K[0:3]/2,rpy_e) + np.multiply(K[3:6]/1000,self.integral_rpy_e) + np.multiply(K[6:9]/2,d_rpy_e)
         return self._nnlsRPM(thrust, target_torques[0], target_torques[1], target_torques[2])
 
     ####################################################################################################
@@ -358,23 +359,23 @@ class RLCrazyFlieAviary(BaseAviary):
         #### Check the feasibility of thrust and torques ###################################################
         if thrust<0 or thrust>self.MAX_THRUST:
             if new_line: print(); new_line = False
-            print("[WARNING] ctrl it", self.step_counter, "in RLCrazyFlieAviary._nnlsRPM(), unfeasible thrust {:.2f} outside range [0, {:.2f}]".format(thrust, self.MAX_THRUST))
+            prYellow("[WARNING] ctrl at {} in RLCrazyFlieAviary._nnlsRPM(), unfeasible thrust {:.2f} outside range [0, {:.2f}]".format(self.step_counter, thrust, self.MAX_THRUST))
         if np.abs(x_torque)>self.MAX_XY_TORQUE:
             if new_line: print(); new_line = False
-            print("[WARNING] ctrl it", self.step_counter, "in RLCrazyFlieAviary._nnlsRPM(), unfeasible roll torque {:.2f} outside range [{:.2f}, {:.2f}]".format(x_torque, -self.MAX_XY_TORQUE, self.MAX_XY_TORQUE))
+            prYellow("[WARNING] ctrl at {} in RLCrazyFlieAviary._nnlsRPM(), unfeasible roll torque {:.2f} outside range [{:.2f}, {:.2f}]".format(self.step_counter, x_torque, -self.MAX_XY_TORQUE, self.MAX_XY_TORQUE))
         if np.abs(y_torque)>self.MAX_XY_TORQUE:
             if new_line: print(); new_line = False
-            print("[WARNING] ctrl it", self.step_counter, "in RLCrazyFlieAviary._nnlsRPM(), unfeasible pitch torque {:.2f} outside range [{:.2f}, {:.2f}]".format(y_torque, -self.MAX_XY_TORQUE, self.MAX_XY_TORQUE))
+            prYellow("[WARNING] ctrl at {} in RLCrazyFlieAviary._nnlsRPM(), unfeasible pitch torque {:.2f} outside range [{:.2f}, {:.2f}]".format(self.step_counter, y_torque, -self.MAX_XY_TORQUE, self.MAX_XY_TORQUE))
         if np.abs(z_torque)>self.MAX_Z_TORQUE:
             if new_line: print(); new_line = False
-            print("[WARNING] ctrl it", self.step_counter, "in RLCrazyFlieAviary._nnlsRPM(), unfeasible yaw torque {:.2f} outside range [{:.2f}, {:.2f}]".format(z_torque, -self.MAX_Z_TORQUE, self.MAX_Z_TORQUE))
+            prYellow("[WARNING] ctrl at {} in RLCrazyFlieAviary._nnlsRPM(), unfeasible yaw torque {:.2f} outside range [{:.2f}, {:.2f}]".format(self.step_counter, z_torque, -self.MAX_Z_TORQUE, self.MAX_Z_TORQUE))
         B = np.multiply(np.array([thrust, x_torque, y_torque, z_torque]), self.B_COEFF)
         sq_rpm = np.dot(self.INV_A, B)
         #### Use NNLS if any of the desired angular velocities is negative #################################
         if np.min(sq_rpm)<0:
             sol, res = nnls(self.A, B, maxiter=3*self.A.shape[1])
             if new_line: print(); new_line = False
-            print("[WARNING] ctrl it", self.step_counter, "in RLCrazyFlieAviary._nnlsRPM(), unfeasible squared rotor speeds, using NNLS")
+            prYellow("[WARNING] ctrl at {} in RLCrazyFlieAviary._nnlsRPM(), unfeasible squared rotor speeds, using NNLS".format(self.step_counter))
             print("Negative sq. rotor speeds:\t [{:.2f}, {:.2f}, {:.2f}, {:.2f}]".format(sq_rpm[0], sq_rpm[1], sq_rpm[2], sq_rpm[3]),
                     "\t\tNormalized: [{:.2f}, {:.2f}, {:.2f}, {:.2f}]".format(sq_rpm[0]/np.linalg.norm(sq_rpm), sq_rpm[1]/np.linalg.norm(sq_rpm), sq_rpm[2]/np.linalg.norm(sq_rpm), sq_rpm[3]/np.linalg.norm(sq_rpm)))
             print("NNLS:\t\t\t\t [{:.2f}, {:.2f}, {:.2f}, {:.2f}]".format(sol[0], sol[1], sol[2], sol[3]),
