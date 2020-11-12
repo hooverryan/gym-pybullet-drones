@@ -3,6 +3,7 @@ import argparse
 from copy import deepcopy
 import torch
 import gym
+import os
 
 from gym_pybullet_drones.envs.BaseAviary import DroneModel, Physics
 from gym_pybullet_drones.envs.RLCrazyFlieAviary import RLCrazyFlieAviary
@@ -10,8 +11,13 @@ from gym_pybullet_drones.utils.utils import *
 
 from ddpg import DDPG
 
-def train(agent, env, max_episodes, max_episode_length=None, run_name=None, num_model_saves=5):
+def train(agent, env, ARGS):
 
+    max_episodes = ARGS.max_episodes
+    max_episode_length = ARGS.max_episode_length
+    run_name = ARGS.run_name
+    num_model_saves = ARGS.num_model_saves
+    
     agent.is_training = True
     step = episode = episode_steps = 0
     episode_reward = 0.
@@ -26,7 +32,7 @@ def train(agent, env, max_episodes, max_episode_length=None, run_name=None, num_
         # env response with next_observation, reward, terminate_info
         next_state, reward, done, info = env.step(action)
 
-        if max_episode_length and episode_steps >= max_episode_length -1:
+        if episode_steps >= max_episode_length -1:
             done = True
 
         # agent observe and update policy
@@ -43,8 +49,9 @@ def train(agent, env, max_episodes, max_episode_length=None, run_name=None, num_
             prGreen('#{}: episode_reward:{} steps:{}'.format(episode,episode_reward,step))
             
             # save intermediate model
-            if (episode+1) % int(max_episodes/5) == 0:
+            if (episode+1) % int(max_episodes/num_model_saves) == 0:
                 agent.save_model(run_name+str(episode+1))
+                test(agent,run_name+str(episode+1)+'_training',ARGS)
 
             # reset
             state = None
@@ -52,7 +59,14 @@ def train(agent, env, max_episodes, max_episode_length=None, run_name=None, num_
             episode_reward = 0.
             episode += 1
 
-def test(num_episodes, agent, env, max_episode_length):
+def test(agent, run_name, ARGS):
+
+    num_episodes = ARGS.validate_episodes
+    max_episode_length = ARGS.test_episode_length
+    record = ARGS.record_video
+
+    env = RLCrazyFlieAviary(drone_model=ARGS.drone, physics=ARGS.physics, freq=ARGS.simulation_freq_hz,
+        gui=False, record=record, PID_Control=ARGS.PID_Control, maxWindSpeed=ARGS.max_wind_speed, run_name=run_name)
 
     agent.is_training = False
     total_reward = 0.
@@ -70,22 +84,26 @@ def test(num_episodes, agent, env, max_episode_length):
             # env response with next_observation, reward, terminate_info
             next_state, reward, done, info = env.step(action)
 
-            if max_episode_length and episode_steps >= max_episode_length -1:
+            if episode_steps >= max_episode_length -1:
                 done = True
-           
+
             # update 
             episode_steps += 1
             episode_reward += reward
             state = next_state
 
             if done: # end of episode
-                prGreen('#{}: episode_steps:{}\tepisode_reward:{}'.format(episode,episode_steps,episode_reward))
+                prCyan('#{}: episode_steps:{}\tepisode_reward:{}'.format(episode,episode_steps,episode_reward))
 
                 # reset
                 total_reward +=episode_reward
                 episode_reward = 0.
+                if record:
+                    os.system('ffmpeg -r 24 -f image2 -s 640x480 -i '+env.IMG_PATH+'frame_%d.png -vcodec libx264 -crf 25  -pix_fmt yuv420p '+run_name+'_run'+str(episode)+'.mp4')
     
     prYellow('[Evaluation] mean_reward:{}'.format(total_reward/num_episodes))
+
+    env.close()
 
 
 if __name__ == "__main__":
@@ -117,22 +135,14 @@ if __name__ == "__main__":
 
     nb_states = env.observation_space.shape[0]
     nb_actions = env.action_space.shape[0]
-
     agent = DDPG(nb_states, nb_actions)
     
-    if ARGS.load_model is not None:
-        agent.load_weights(ARGS.load_model)
+    if ARGS.load_model is not None:agent.load_weights(ARGS.load_model)
     
-    if ARGS.load_experience is not None:
-        agent.load_experience(ARGS.load_experience)
+    if ARGS.load_experience is not None: agent.load_experience(ARGS.load_experience)
 
-    if ARGS.train:
-        train(agent, env, ARGS.max_episodes, ARGS.max_episode_length, ARGS.run_name)
+    if ARGS.train: train(agent, env, ARGS)
 
+    if ARGS.test: test(agent, ARGS.run_name, ARGS)
+    
     env.close()
-
-    if ARGS.test:
-        env = RLCrazyFlieAviary(drone_model=ARGS.drone, physics=ARGS.physics, freq=ARGS.simulation_freq_hz,
-            gui=False, record=ARGS.record_video, PID_Control=ARGS.PID_Control, maxWindSpeed=ARGS.max_wind_speed, run_name=ARGS.run_name)
-        test(ARGS.validate_episodes, agent, env, ARGS.test_episode_length)
-        env.close()
