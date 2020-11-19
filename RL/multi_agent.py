@@ -115,7 +115,7 @@ def train(agents, env, ARGS):
                 
                 for i in range(len(agents)):
                     agents[i].save_model(run_name+'_agent'+str(i)+'_'+str(episode+1))
-                test(agents[i],run_name+'_agent'+str(i)+'_'+str(episode+1)+'_training',ARGS)
+                    test(agents[i],run_name+'_agent'+str(i)+'_'+str(episode+1)+'_training',ARGS)
 
             # reset
             state = None
@@ -157,7 +157,7 @@ def test(agent, run_name, ARGS):
             state = next_state
 
             if done: # end of episode
-                prCyan('#{}: episode_steps:{}\tepisode_reward:{}'.format(episode,episode_steps,episode_reward))
+                prGreen('#{}: episode_reward:{} episode_steps:{}'.format(episode,episode_reward,episode_steps))
 
                 # reset
                 total_reward +=episode_reward
@@ -188,8 +188,6 @@ if __name__ == "__main__":
     parser.add_argument('--test',               default=True,            type=str2bool,                        help='Whether to do testing (default: True)')
     parser.add_argument('--max_episodes',       default=10000,           type=int,                             help='How many episodes to perform during training (default: 10000)')
     parser.add_argument('--max_episode_length', default=3000,            type=int,                             help='Maximum training episode length (default: 3000)')
-    #parser.add_argument('--load_model',         default=None,            type=str,                             help='Model name to load')
-    #parser.add_argument('--load_experience',    default=None,            type=str,                             help='Experience to load')
     ARGS = parser.parse_args()
 
     env = RLCrazyFlieAviary(drone_model=ARGS.drone, physics=ARGS.physics, freq=ARGS.simulation_freq_hz,

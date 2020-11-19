@@ -37,7 +37,7 @@ def train(agent, env, ARGS):
 
         # agent observe and update policy
         agent.observe(state, action, reward, done)
-        if step > 10: agent.update_policy()
+        if step > agent.batch_size: agent.update_policy()
         
         # update 
         step += 1
@@ -46,7 +46,7 @@ def train(agent, env, ARGS):
         state = next_state
 
         if done: # end of episode
-            prGreen('#{}: episode_reward:{} steps:{}'.format(episode,episode_reward,step))
+            prGreen('#{}: episode_reward:{} episode_steps:{}'.format(episode,episode_reward,episode_steps))
             
             # save intermediate model
             if (episode+1) % int(max_episodes/num_model_saves) == 0:
@@ -110,7 +110,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='DDPG flight script using RLCrazyFlieAviary')
     parser.add_argument('--drone',              default=DroneModel.CF2X, type=lambda model: DroneModel[model], help='Drone model (default: CF2X)')
-    parser.add_argument('--physics',            default=Physics.PYB,     type=lambda phy: Physics[phy],        help='Physics updates (default: PYB)')
+    parser.add_argument('--physics',            default=Physics.PYB_DRAG,type=lambda phy: Physics[phy],        help='Physics updates (default: PYB_DRAG)')
     parser.add_argument('--PID_Control',        default=False,           type=str2bool,                        help='Whether to use a PID Control (default: False)')
     parser.add_argument('--gui',                default=True,            type=str2bool,                        help='Whether to use PyBullet GUI (default: True)')
     parser.add_argument('--record_video',       default=False,           type=str2bool,                        help='Whether to record a video (default: False)')
