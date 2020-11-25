@@ -7,7 +7,7 @@ from torch.autograd import Variable
 
 import pickle
 
-from memory import SequentialMemory
+from memory import Memory
 from random_process import OrnsteinUhlenbeckProcess
 
 from models import (Actor, Critic)
@@ -19,8 +19,8 @@ criterion = nn.MSELoss()
 class DDPG(object):
     def __init__(self, numStates, numActions):
         
-        self.lr_actor = 0.001
-        self.lr_critic = 0.0001
+        self.lr_actor = 0.0001
+        self.lr_critic = 0.001
 
         self.numStates = numStates
         self.numActions= numActions
@@ -38,29 +38,33 @@ class DDPG(object):
         hard_update(self.critic_target, self.critic)
         
         #Create replay buffer
-        self.memory = SequentialMemory(limit=1000000)
-        self.random_process = OrnsteinUhlenbeckProcess(theta=0.15, size=self.numActions, mu=0, sigma=0.1)
+        self.memory = Memory(max_size=1000000)
+        self.random_process = OrnsteinUhlenbeckProcess(theta=0.15, size=self.numActions, mu=0.0, sigma=0.2)
 
         # Hyper-parameters
-        self.batch_size = 128
+        self.batch_size = 32
         self.tau = 0.001
         self.discount = 0.99
         self.epsilon = 1
-        self.depsilon = 0.001
+        self.min_epsilon = 0.5
+        self.depsilon = 1/100000
 
         # 
         self.is_training = True
 
     def update_policy(self):
         # Sample batch
+        #state_batch, action_batch, reward_batch, \
+        #next_state_batch, terminal_batch = self.memory.sample_and_split(self.batch_size)
         state_batch, action_batch, reward_batch, \
-        next_state_batch, terminal_batch = self.memory.sample_and_split(self.batch_size)
+        next_state_batch, terminal_batch = self.memory.sample(self.batch_size)
+        
 
         # Prepare for the target q batch
         next_state_tensor = to_tensor(next_state_batch)
-        next_state_actions = self.actor(next_state_tensor)
-        next_q_values = self.critic_target(torch.cat([next_state_tensor,next_state_actions],1))
-        next_q_values.volatile=False
+        next_state_actions = self.actor_target(next_state_tensor)
+        with torch.no_grad():
+            next_q_values = self.critic_target(torch.cat([next_state_tensor,next_state_actions],1))
 
         target_q_batch = to_tensor(reward_batch) + \
             self.discount*to_tensor(terminal_batch.astype(np.float))*next_q_values
@@ -76,7 +80,7 @@ class DDPG(object):
         # Actor update
         self.actor.zero_grad()
 
-        state_tensor = to_tensor(next_state_batch)
+        state_tensor = to_tensor(state_batch)
         state_actions = self.actor(state_tensor)
         policy_loss = -self.critic(torch.cat([state_tensor,state_actions],1))
 
@@ -90,17 +94,17 @@ class DDPG(object):
 
     def select_action(self, state, decay_epsilon=True):
         action = to_numpy(self.actor(torch.from_numpy(np.array([state])).float())).squeeze(0)
-        action += self.is_training*max(self.epsilon, 0)*self.random_process.sample()
+        action += self.is_training*max(self.epsilon, self.min_epsilon)*self.random_process.sample()
         action = np.clip(action, -1., 1.)
 
         if decay_epsilon:
-            self.epsilon = self.epsilon*(1.0-self.depsilon)
+            self.epsilon -= self.depsilon
 
         return action
         
-    def observe(self, s, a, r, done):
+    def observe(self, s, a, r, ns, done):
         if self.is_training:
-            self.memory.append(s, a, r, done)
+            self.memory.push(s, a, r, ns, done)
 
     def reset(self):
         self.random_process.reset_states()

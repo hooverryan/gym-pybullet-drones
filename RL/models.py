@@ -11,6 +11,7 @@ class Actor(nn.Module):
         self.fc4 = nn.Linear(hidden3, numActions)
         
         self.relu = nn.ReLU()
+        self.tanh = nn.Tanh()
         
     def forward(self, x):
         out = self.fc1(x)
@@ -23,6 +24,7 @@ class Actor(nn.Module):
         out = self.relu(out)
         
         out = self.fc4(out)
+        out = self.tanh(out)
         return out
         
 class Critic(nn.Module):

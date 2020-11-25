@@ -198,8 +198,9 @@ class RLCrazyFlieAviary(BaseAviary):
         else:
             rewardGoal = 0
         
-        return rewardGoal - penaltyPosition - penaltyAngle - penaltyVelocity - penaltyAngularVelocity
-        -penaltyFlag
+        #return rewardGoal - penaltyPosition - penaltyAngle - penaltyVelocity - penaltyAngularVelocity
+        #-penaltyFlag
+        return -penaltyPosition - penaltyAngle
 
     ####################################################################################################
     #### Compute the current done value(s) #############################################################
