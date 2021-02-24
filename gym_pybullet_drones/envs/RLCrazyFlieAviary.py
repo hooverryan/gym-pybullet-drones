@@ -35,20 +35,26 @@ class RLCrazyFlieAviary(BaseAviary):
                         neighbourhood_radius: float=np.inf, initial_xyzs=None, initial_rpys=None,
                         physics: Physics=Physics.PYB_DRAG, freq: int=200, aggregate_phy_steps: int=1,
                         gui=False, record=False, obstacles=False, maxWindSpeed=8.0, user_debug_gui=True,
-                        PID_Control=False, target_pos=None, run_name: str=''):
+                        PID_Control=False, target_pos=None, run_name: str='', max_episode_length: int=2000):
 
         self.usePID = PID_Control
-        
-        super().__init__(drone_model=drone_model, neighbourhood_radius=neighbourhood_radius,
-            initial_xyzs=initial_xyzs, initial_rpys=initial_rpys, physics=physics, freq=freq, aggregate_phy_steps=aggregate_phy_steps,
-            gui=gui, record=record, obstacles=obstacles, maxWindSpeed=maxWindSpeed, user_debug_gui=user_debug_gui, run_name=run_name) 
-        
+        self.INIT_X_BOUND = 0.25
+        self.INIT_Y_BOUND = 0.25
+        self.INIT_Z_BOUND = 0.25
+        self.INIT_R_BOUND = np.pi/2
+        self.INIT_P_BOUND = np.pi/2
+        self.INIT_YAW_BOUND = np.pi
+
         if target_pos is None:
             self.target_pos = np.array([0,0,0.5])
         elif np.array(target_pos).shape==(1,3):
             self.target_pos=target_pos
         else:
             prRed("[ERRROR] invalid target position shape in RLCrazyFlieAviary.__init__()")
+        
+        super().__init__(drone_model=drone_model, neighbourhood_radius=neighbourhood_radius,
+            initial_xyzs=initial_xyzs, initial_rpys=initial_rpys, physics=physics, freq=freq, aggregate_phy_steps=aggregate_phy_steps,
+            gui=gui, record=record, obstacles=obstacles, maxWindSpeed=maxWindSpeed, user_debug_gui=user_debug_gui, run_name=run_name) 
 
         self.A = np.array([ [1, 1, 1, 1], [0, 1, 0, -1], [-1, 0, 1, 0], [-1, 1, -1, 1] ]); self.INV_A = np.linalg.inv(self.A)
         self.B_COEFF = np.array([1/self.KF, 1/(self.KF*self.L), 1/(self.KF*self.L), 1/self.KM])
@@ -56,18 +62,21 @@ class RLCrazyFlieAviary(BaseAviary):
 
         self.geoFenceMax = 0.99
         
-        self.penaltyPosition = 1
-        self.penaltyAngle = 1
-        self.penaltyVelocity = 5
-        self.penaltyAngularVelocity = 5
-        self.penaltyFlag = 1000
+        self.penaltyPosition = 100
+        self.penaltyAngle = 100
+        self.penaltyVelocity = 100
+        self.penaltyAngularVelocity = 100
+        self.penaltyFlag = 100
+        self.penaltyControl = 1e-5
         
-        self.positionThreshold = 0.1
-        self.angleThreshold = np.pi/18
-        self.angularVelocityThreshold = 0.05
-        self.velocityThreshold = 0.1
+        self.positionThreshold = 0.01
+        self.angleThreshold = np.pi/36
+        self.angularVelocityThreshold = 0.01
+        self.velocityThreshold = 0.01
         
-        self.rewardGoal = 20
+        self.rewardPos = 10
+        self.rewardGoal = 100
+        self.max_episode_length = max_episode_length
         
     def _housekeeping(self):
         #### Initialize/reset counters and zero-valued variables ###########################################
@@ -79,16 +88,17 @@ class RLCrazyFlieAviary(BaseAviary):
         self.no_pybullet_dyn_accs = np.zeros((self.NUM_DRONES,3))
         
         #### Initialize the drones kinematic information ###################################################
-        unitVector = np.random.rand(3)-np.array([0.5,0.5,0])
-        startingPoint = np.ones((self.NUM_DRONES,3))*np.array([0,0,0.5])
-        self.pos = 0.5*np.random.rand(1)*unitVector/np.linalg.norm(unitVector)*np.ones((self.NUM_DRONES,3))+startingPoint
-
-        self.quat = np.zeros((self.NUM_DRONES,4)); self.rpy = np.zeros((self.NUM_DRONES,3))
+        self.pos = np.ones((self.NUM_DRONES,3))*np.array([np.random.uniform(-self.INIT_X_BOUND,self.INIT_X_BOUND),np.random.uniform(-self.INIT_Y_BOUND,self.INIT_Y_BOUND),np.random.uniform(-self.INIT_Z_BOUND,self.INIT_Z_BOUND)])+self.target_pos
+        self.rpy = np.ones((self.NUM_DRONES,3))*np.array([np.random.uniform(-self.INIT_R_BOUND,self.INIT_R_BOUND),np.random.uniform(-self.INIT_P_BOUND,self.INIT_P_BOUND),np.random.uniform(-self.INIT_YAW_BOUND,self.INIT_YAW_BOUND)])
+        self.quat = np.array([p.getQuaternionFromEuler(self.rpy[drone,:]) for drone in range(self.NUM_DRONES)])
         self.vel = np.zeros((self.NUM_DRONES,3)); self.ang_v = np.zeros((self.NUM_DRONES,3))
 
         #### Initialize wind speed and heading information #################################################
         windHeading = np.random.rand()*2*np.pi
         self.wind=np.random.rand()*self.MAXWINDSPEED*np.array([-np.cos(windHeading),np.sin(windHeading),0])
+        
+        #### Reset reward information ######################################################################
+        self.prev_shaping = None
         
         #### Reset Controller information ##################################################################
         self.last_pos_e = np.zeros(3); self.integral_pos_e = np.zeros(3); self.last_rpy_e = np.zeros(3); self.integral_rpy_e = np.zeros(3)
@@ -141,7 +151,7 @@ class RLCrazyFlieAviary(BaseAviary):
     def _computeObs(self):
         droneState = self._getDroneStateVector(0)
         droneState = np.hstack([droneState[0:3],droneState[7:16]])
-        droneState.reshape(np.shape(self.observation_space)[0],)        
+        droneState.reshape(np.shape(self.observation_space)[0],)
         return self._clipAndNormalizeState(droneState)
 
     ####################################################################################################
@@ -158,7 +168,8 @@ class RLCrazyFlieAviary(BaseAviary):
             rpm = self._caluclatePIDControlSignal(action)
         else:
             rpm = self._normalizedActionToRPM(action)
-        return np.clip(np.array(rpm), 0, self.MAX_RPM)
+        action = np.clip(np.array(rpm), 0, self.MAX_RPM)
+        return action
 
     ####################################################################################################
     #### Compute the current reward value(s) ###########################################################
@@ -175,33 +186,42 @@ class RLCrazyFlieAviary(BaseAviary):
         angle = obs[3:6]
         omega = obs[9:12]
         
-        errorPosition = np.sum(np.square(pos-self.target_pos))
-        errorVelocity = np.sum(np.square(v))
-        errorAngularVelocity = np.sum(np.square(omega))
+        errorPosition = np.sqrt(np.sum(np.square(pos-self.target_pos)))
+        errorVelocity = np.sqrt(np.sum(np.square(v)))
+        errorAngularVelocity = np.sqrt(np.sum(np.square(omega)))
         
         penaltyPosition = errorPosition*self.penaltyPosition
-        penaltyAngle = np.square(angle[2])*self.penaltyAngle
+        penaltyAngle = np.abs(angle[2])*self.penaltyAngle
         penaltyVelocity = errorVelocity*self.penaltyVelocity
         penaltyAngularVelocity = errorAngularVelocity*self.penaltyAngularVelocity
         
-        outOfGeoFence = any(np.abs(pos) > self.geoFenceMax)
-        crashed = True if pos[2]<self.COLLISION_H else False
-        penaltyFlag = self.penaltyFlag if outOfGeoFence or crashed else 0
+        outOfGeoFence = any(np.abs(pos) > self.geoFenceMax) or pos[2]<0
+        penaltyFlag = self.penaltyFlag if outOfGeoFence else 0
         
-        rewardPosition = np.sqrt(errorPosition)>self.positionThreshold
-        rewardYaw = angle[2]>self.angleThreshold
-        rewardVelocity = np.sqrt(errorVelocity)>self.velocityThreshold
-        rewardAngularVelocity = np.sqrt(errorAngularVelocity)>self.angularVelocityThreshold
+        rewardPosition = errorPosition<self.positionThreshold
+        rewardYaw = abs(angle[2])<self.angleThreshold
+        rewardVelocity = errorVelocity<self.velocityThreshold
+        rewardAngularVelocity = errorAngularVelocity<self.angularVelocityThreshold
         
         if all([rewardPosition, rewardYaw, rewardVelocity, rewardAngularVelocity]):
             rewardGoal = self.rewardGoal
         else:
             rewardGoal = 0
         
-        #return rewardGoal - penaltyPosition - penaltyAngle - penaltyVelocity - penaltyAngularVelocity
-        #-penaltyFlag
-        return -penaltyPosition - penaltyAngle
-
+        reward = 0
+        shaping = -penaltyPosition - penaltyAngle - penaltyVelocity - penaltyAngularVelocity
+        shaping += rewardPosition*self.rewardPos
+        
+        if self.prev_shaping is not None:
+            reward = shaping - self.prev_shaping
+        self.prev_shaping = shaping
+        
+        reward -= penaltyFlag
+        reward += rewardGoal
+        reward -= np.sqrt(np.sum(np.square(self.last_action.flatten()-self.HOVER_RPM))) * self.penaltyControl
+       
+        return reward
+        
     ####################################################################################################
     #### Compute the current done value(s) #############################################################
     ####################################################################################################
@@ -212,10 +232,26 @@ class RLCrazyFlieAviary(BaseAviary):
     #### - done (..)                        the done value(s) associated to the current obs/state ######
     ####################################################################################################
     def _computeDone(self, obs):
-        outOfGeoFence = any(np.abs(obs[0:3]) > self.geoFenceMax)
-        outOfTime = True if (self.step_counter/self.SIM_FREQ > 10) else False
-        crashed = True if obs[2]<self.COLLISION_H else False
-        return outOfGeoFence or outOfTime or crashed 
+        outOfGeoFence = any(np.abs(obs[0:3]) > self.geoFenceMax) or obs[2]<0
+        #crashed = True if obs[2]<self.COLLISION_H else False
+
+        pos = obs[0:3]
+        v = obs[6:9]
+        angle = obs[3:6]
+        omega = obs[9:12]
+        
+        errorPosition = np.sqrt(np.sum(np.square(pos-self.target_pos)))
+        errorVelocity = np.sqrt(np.sum(np.square(v)))
+        errorAngularVelocity = np.sqrt(np.sum(np.square(omega)))
+        
+        rewardPosition = errorPosition<self.positionThreshold
+        rewardYaw = abs(angle[2])<self.angleThreshold
+        rewardVelocity = errorVelocity<self.velocityThreshold
+        rewardAngularVelocity = errorAngularVelocity<self.angularVelocityThreshold
+        
+        overTime = (self.step_counter > self.max_episode_length)
+
+        return outOfGeoFence or overTime or all([rewardPosition, rewardYaw, rewardVelocity, rewardAngularVelocity])# or crashed
 
     ####################################################################################################
     #### Compute the current info dict(s) ##############################################################
@@ -240,13 +276,13 @@ class RLCrazyFlieAviary(BaseAviary):
     ####################################################################################################
     def _clipAndNormalizeState(self, state):
         clipped_pos = np.clip(state[0:3], -1, 1)
-        clipped_rp = np.clip(state[3:5], -np.pi/3, np.pi/3)
+        clipped_rp = np.clip(state[3:5], -np.pi/2, np.pi/2)
         clipped_vel = np.clip(state[6:9], -5, 5)
         clipped_ang_vel_rp = np.clip(state[9:11], -10*np.pi, 10*np.pi)
         clipped_ang_vel_y = np.clip(state[11], -20*np.pi, 20*np.pi)
         if self.GUI: self._clipAndNormalizeStateWarning(state, clipped_pos, clipped_rp, clipped_vel, clipped_ang_vel_rp, clipped_ang_vel_y)
         normalized_pos = clipped_pos
-        normalized_rp = clipped_rp/(np.pi/3)
+        normalized_rp = clipped_rp/(np.pi/2)
         normalized_y = state[5]/np.pi
         normalized_vel = clipped_vel/5
         normalized_ang_vel_rp = clipped_ang_vel_rp/(10*np.pi)
@@ -278,6 +314,8 @@ class RLCrazyFlieAviary(BaseAviary):
         cur_pos = droneState[0:3]
         cur_quat = droneState[3:7]
         
+        gains = (gains+1)/2
+        
         Kpos = gains[0:9]
         Katt = gains[9:18]
         
@@ -305,7 +343,7 @@ class RLCrazyFlieAviary(BaseAviary):
         self.last_pos_e = pos_e
         self.integral_pos_e = self.integral_pos_e + pos_e/self.SIM_FREQ
         #### PID target thrust #############################################################################
-        target_force = np.array([0,0,self.GRAVITY]) + np.multiply(K[0:3]/2,pos_e) + np.multiply(K[3:6]/1000,self.integral_pos_e) + np.multiply(K[6:9]/2,d_pos_e)
+        target_force = np.array([0,0,self.GRAVITY]) + np.multiply(K[0:3],pos_e) + np.multiply(K[3:6]/1000,self.integral_pos_e) + np.multiply(K[6:9],d_pos_e)
         target_rpy = np.zeros(3)
         sign_z =  np.sign(target_force[2])
         if sign_z==0: sign_z = 1
@@ -340,7 +378,7 @@ class RLCrazyFlieAviary(BaseAviary):
         self.last_rpy_e = rpy_e
         self.integral_rpy_e = self.integral_rpy_e + rpy_e/self.SIM_FREQ
         #### PID target torques ############################################################################
-        target_torques = np.multiply(K[0:3]/2,rpy_e) + np.multiply(K[3:6]/1000,self.integral_rpy_e) + np.multiply(K[6:9]/2,d_rpy_e)
+        target_torques = np.multiply(K[0:3],rpy_e) + np.multiply(K[3:6]/1000,self.integral_rpy_e) + np.multiply(K[6:9],d_rpy_e)
         return self._nnlsRPM(thrust, target_torques[0], target_torques[1], target_torques[2])
 
     ####################################################################################################

@@ -171,6 +171,7 @@ class BaseAviary(gym.Env):
     def step(self, action):
         #### Save a video frame in PNG format if RECORD=True and GUI=False #################################
         if self.RECORD and not self.GUI and self.step_counter%self.CAPTURE_FREQ==0:
+            p.addUserDebugLine(lineWidth=5, lineFromXYZ=self.target_pos, lineToXYZ=(self.pos[0,:]).tolist(), lineColorRGB=[0.1,1.0,0.1], lifeTime = self.TIMESTEP, physicsClientId=self.CLIENT)
             [w, h, rgb, dep, seg] = p.getCameraImage(width=self.VID_WIDTH, height=self.VID_HEIGHT, shadow=1, viewMatrix=self.CAM_VIEW,
                 projectionMatrix=self.CAM_PRO, renderer=p.ER_TINY_RENDERER, flags=p.ER_SEGMENTATION_MASK_OBJECT_AND_LINKINDEX, physicsClientId=self.CLIENT)
             (Image.fromarray(np.reshape(rgb, (h, w, 4)), 'RGBA')).save(self.IMG_PATH+"frame_"+str(self.FRAME_NUM)+".png")
@@ -497,7 +498,8 @@ class BaseAviary(gym.Env):
     ####################################################################################################
     def _normalizedActionToRPM(self, action):
         if np.any(np.abs(action))>1: print("\n[ERROR] it", self.step_counter, "in BaseAviary._normalizedActionToRPM(), out-of-bound action")
-        return np.where(action <= 0, (action+1)*self.HOVER_RPM, action*self.MAX_RPM) # Non-linear mapping: -1 -> 0, 0 -> HOVER_RPM, 1 -> MAX_RPM
+        #return np.where(action <= 0, (action+1)*self.HOVER_RPM, action*self.MAX_RPM) # Non-linear mapping: -1 -> 0, 0 -> HOVER_RPM, 1 -> MAX_RPM
+        return (action+1)/2*self.MAX_RPM
 
     ####################################################################################################
     #### Save an action into self.last_action disambiguating between array and dict inputs #############

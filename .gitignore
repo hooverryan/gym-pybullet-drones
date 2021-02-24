@@ -428,3 +428,4 @@ TSWLatexianTemp*
 files/*video*
 RL/*.mp4
 RL/*.pkl
+archive/*

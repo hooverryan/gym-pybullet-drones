@@ -19,7 +19,7 @@ class Logger(object):
     #### - num_drones (int)                 number of drones ###########################################
     #### - duration_sec (int)               (opt) to preallocate the log arrays, improves performance ##
     ####################################################################################################
-    def __init__(self, logging_freq_hz: int, num_drones: int=1, duration_sec: int=0):
+    def __init__(self, logging_freq_hz: int, num_drones: int=1, duration_sec: int=0, log_name=None):
         self.LOGGING_FREQ_HZ = logging_freq_hz; self.NUM_DRONES = num_drones
         self.PREALLOCATED_ARRAYS = False if duration_sec==0 else True
         self.counters = np.zeros(num_drones)
@@ -34,7 +34,10 @@ class Logger(object):
                                                                                                                     # vel_x, vel_y, vel_z,
                                                                                                                     # roll, pitch, yaw,
                                                                                                                     # ang_vel_x, ang_vel_y, ang_vel_z
-
+        if log_name is None:
+            self.log_name = "flight-"+datetime.now().strftime("%m.%d.%Y_%H.%M.%S")+".npy"
+        else:
+            self.log_name = "flight_log"+log_name
     ####################################################################################################
     #### Log entries for a single simulation step, of a single drone ###################################
     ####################################################################################################
@@ -63,8 +66,8 @@ class Logger(object):
     ####################################################################################################
     #### Save the logs to file #########################################################################
     ####################################################################################################
-    def save(self):
-        with open(os.path.dirname(os.path.abspath(__file__))+"/../../files/save-flight-"+datetime.now().strftime("%m.%d.%Y_%H.%M.%S")+".npy", 'wb') as out_file:
+    def save(self,path):
+        with open(path+self.log_name+".npy", 'wb') as out_file:
             np.save(out_file, self.timestamps); np.save(out_file, self.states); np.save(out_file, self.controls)
 
     ####################################################################################################
@@ -73,7 +76,7 @@ class Logger(object):
     #### Arguments #####################################################################################
     #### - pwm (bool)                       if True, convert logged RPM into PWM values ################
     ####################################################################################################
-    def plot(self, pwm=False):
+    def plot(self, pwm=False, path=None):
         #### Loop over colors and line styles ##############################################################
         plt.rc('axes', prop_cycle=(cycler('color', ['r', 'g', 'b', 'y']) + cycler('linestyle', ['-', '--', ':', '-.'])))
         fig, axs = plt.subplots(8,2)
@@ -89,5 +92,9 @@ class Logger(object):
             axs[i%8,i//8].grid(True)
             axs[i%8,i//8].legend(loc='upper right', frameon=True)
         fig.subplots_adjust(left=0.06, bottom=0.05, right=0.99, top=0.98, wspace=0.15, hspace=0.0)
-        plt.show()
-
+        
+        if path is None:
+            plt.show()
+        else:
+            fig.savefig(path+self.log_name+'.png')
+            plt.close(fig)
