@@ -264,6 +264,7 @@ class BaseAviary(gym.Env):
         self.RESET_TIME = time.time(); self.step_counter = 0; self.first_render_call = True
         self.X_AX = -1*np.ones(self.NUM_DRONES); self.Y_AX = -1*np.ones(self.NUM_DRONES); self.Z_AX = -1*np.ones(self.NUM_DRONES);
         self.GUI_INPUT_TEXT = -1*np.ones(self.NUM_DRONES); self.USE_GUI_RPM=False; self.last_input_switch = 0
+        self.current_action = -1*np.ones((self.NUM_DRONES,4))
         self.last_action = -1*np.ones((self.NUM_DRONES,4))
         self.last_clipped_action = np.zeros((self.NUM_DRONES,4)); self.gui_input = np.zeros(4)
         self.no_pybullet_dyn_accs = np.zeros((self.NUM_DRONES,3))
@@ -314,7 +315,7 @@ class BaseAviary(gym.Env):
     #### - state ((20,) array)              the state vector of the nth drone ##########################
     ####################################################################################################
     def _getDroneStateVector(self, nth_drone):
-        state = np.hstack([self.pos[nth_drone,:], self.quat[nth_drone,:], self.rpy[nth_drone,:], self.vel[nth_drone,:], self.ang_v[nth_drone,:], self.last_action[nth_drone,:]])
+        state = np.hstack([self.pos[nth_drone,:], self.quat[nth_drone,:], self.rpy[nth_drone,:], self.vel[nth_drone,:], self.ang_v[nth_drone,:], self.current_action[nth_drone,:]])
         return state.reshape(20,)
 
     ####################################################################################################
@@ -502,15 +503,17 @@ class BaseAviary(gym.Env):
         return (action+1)/2*self.MAX_RPM
 
     ####################################################################################################
-    #### Save an action into self.last_action disambiguating between array and dict inputs #############
+    #### Save an action into self.current_action disambiguating between array and dict inputs ##########
     ####################################################################################################
     #### Arguments #####################################################################################
-    #### - action ((4,1) array or dict)     an array or a dict of arrays to be stored in last_action ###
+    #### - action ((4,1) array or dict)     an array or a dict of arrays to be stored in current_action#
     ####################################################################################################
     def _saveLastAction(self, action):
         if isinstance(action, collections.Mapping):
-            for k, v in action.items(): self.last_action[int(k),:] = v
-        else: self.last_action = np.reshape(action, (self.NUM_DRONES, 4))
+            for k, v in action.items(): self.current_action[int(k),:] = v
+        else:
+            self.last_action = self.current_action
+            self.current_action = np.reshape(action, (self.NUM_DRONES, 4))
 
     ####################################################################################################
     #### Draw the local frame of the nth drone #########################################################

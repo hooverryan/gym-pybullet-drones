@@ -77,13 +77,12 @@ class SaveOnBestTrainingRewardCallback(BaseCallback):
 def test(agent, env, run_name, ARGS, log_dir):
 
     num_episodes = ARGS.validate_episodes
-    max_episode_length = ARGS.test_episode_length
-    record = ARGS.record_video
     
     test_env = RLCrazyFlieAviary(drone_model=env.DRONE_MODEL, physics=env.PHYSICS, freq=env.SIM_FREQ,
-        gui=False, record=record, PID_Control=env.usePID, maxWindSpeed=env.MAXWINDSPEED, run_name=run_name)
+        gui=False, record=ARGS.record_video, PID_Control=env.usePID, maxWindSpeed=env.MAXWINDSPEED,
+        run_name=run_name, max_episode_length=ARGS.test_episode_length)
         
-    total_reward = 0.
+    total_reward = []
     
     for episode in range(num_episodes):
             
@@ -101,9 +100,6 @@ def test(agent, env, run_name, ARGS, log_dir):
             # env response with next_observation, reward, terminate_info
             next_state, reward, done, info = test_env.step(action)
 
-            if episode_steps >= max_episode_length -1:
-                done = True
-
             # log and update
             logger.log(drone=0, timestamp=episode_steps/env.SIM_FREQ, state=np.hstack([next_state[0:3],np.zeros(4),next_state[3:12],test_env._preprocessAction(action)]), control=np.hstack([test_env.target_pos, np.zeros(9)]))
             episode_steps += 1
@@ -111,13 +107,13 @@ def test(agent, env, run_name, ARGS, log_dir):
             state = next_state
 
             if done: # end of episode
-                prCyan('#{}:\tepisode_reward:{}\tepisode_steps:{}'.format(episode,episode_reward,episode_steps))
+                prGreen('#{}:\tepisode_reward:{}\tepisode_steps:{}'.format(episode,episode_reward,episode_steps))
 
                 # reset
-                total_reward += episode_reward
+                total_reward.append(episode_reward)
                 episode_reward = 0.
                 
-        if record: os.system('ffmpeg -r 24 -f image2 -s 640x480 -i '+test_env.IMG_PATH+'frame_%d.png -vcodec libx264 -crf 25  -pix_fmt yuv420p '+log_dir+'\\videos\\'+run_name+'-'+str(episode+1)+'.mp4')
+        os.system('ffmpeg -r 24 -f image2 -s 640x480 -i '+test_env.IMG_PATH+'frame_%d.png -vcodec libx264 -crf 25  -pix_fmt yuv420p '+log_dir+'\\videos\\'+run_name+'-'+str(episode+1)+'.mp4')
         try:
             logger.save(log_dir+"/flightlogs/")
             logger.plot(path=log_dir+"/flightlogs/")
@@ -126,9 +122,9 @@ def test(agent, env, run_name, ARGS, log_dir):
     
     test_env.close()
 
-    mean_rewards = total_reward/num_episodes
+    mean_rewards = sum(total_reward)/len(total_reward)
     prYellow('[Evaluation] mean_reward:{}'.format(mean_rewards))
-    return mean_rewards
+    return mean_rewards, total_reward
     
 def moving_average(values, window):
     """
@@ -174,7 +170,7 @@ def main(ARGS):
     parser.add_argument('--simulation_freq_hz', default=200,             type=int,                             help='Simulation frequency in Hz (default: 200)')
     parser.add_argument('--run_name',           default='untitled',      type=str,                             help='Name for video files, frames, log files, etc.')
     parser.add_argument('--max_wind_speed',     default=0,               type=float,                           help='Maximum wind speed (requires Physics.PYB_WIND model) (default: 0)')
-    parser.add_argument('--test_episode_length',default=6000,            type=int,                             help='Maximum test episode length (default: 6000)')
+    parser.add_argument('--test_episode_length',default=4000,            type=int,                             help='Maximum test episode length (default: 4000)')
     parser.add_argument('--validate_episodes',  default=5,               type=int,                             help='Number of test simulations (default: 5)')
     parser.add_argument('--step_iters',         default=10,              type=int,                             help='Number of intermediate model saves during training (default: 5)')
     parser.add_argument('--training_timesteps', default=100000,          type=int,                             help='How many timesteps to perform during training (default: 100000)')
@@ -185,12 +181,13 @@ def main(ARGS):
     ARGS = parser.parse_args()
     
     #### Set up the log directories
-    log_dir = os.path.join("logs", ARGS.run_name + "-" + datetime.datetime.now().strftime('%Y_%m_%d_%H_%M_%S'))
+    log_dir = os.path.join("logs", ARGS.run_name + "-" + datetime.datetime.now().strftime('%Y_%m_%d_%H_%M'))
     os.makedirs(log_dir)
     os.makedirs(os.path.join(log_dir,'videos'))
     os.makedirs(os.path.join(log_dir,'flightlogs'))
     os.makedirs(os.path.join(log_dir,'models'))
     os.makedirs(os.path.join(log_dir,'experiences'))
+    testResultsFile = open(os.path.join(log_dir,'testResults.txt'),'a')
     
     #### Set up Environments, and action and observation spaces
     orig_env = RLCrazyFlieAviary(drone_model=ARGS.drone, physics=ARGS.physics, freq=ARGS.simulation_freq_hz,
@@ -216,9 +213,14 @@ def main(ARGS):
         agent.save_replay_buffer(log_dir+"/experiences/"+ARGS.run_name+"_experience_"+str((i+1)*ARGS.training_timesteps))
 
         #### Show (and record a video of) the model's performance ##########################################
-        test(agent, orig_env, ARGS.run_name+"_"+str((i+1)*ARGS.training_timesteps), ARGS, log_dir)
+        _, rewards = test(agent, orig_env, ARGS.run_name+"_"+str((i+1)*ARGS.training_timesteps), ARGS, log_dir)
+        
+        for r in rewards:
+            testResultsFile.write(str((i+1)*ARGS.training_timesteps)+','+str(r)+'\n')
 
     env.close()
+    
+    testResultsFile.close()
 
     results_plotter.plot_results([os.path.join(os.getcwd(), log_dir)], ARGS.step_iters * ARGS.training_timesteps, results_plotter.X_TIMESTEPS, ARGS.run_name)
 
