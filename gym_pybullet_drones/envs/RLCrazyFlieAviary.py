@@ -84,8 +84,8 @@ class RLCrazyFlieAviary(BaseAviary):
         self.RESET_TIME = time.time(); self.step_counter = 0; self.first_render_call = True
         self.X_AX = -1*np.ones(self.NUM_DRONES); self.Y_AX = -1*np.ones(self.NUM_DRONES); self.Z_AX = -1*np.ones(self.NUM_DRONES);
         self.GUI_INPUT_TEXT = -1*np.ones(self.NUM_DRONES); self.USE_GUI_RPM=False; self.last_input_switch = 0
-        self.current_action = -1*np.ones((self.NUM_DRONES,4))
-        self.last_action = -1*np.ones((self.NUM_DRONES,4))
+        self.current_action = self.HOVER_RPM*np.ones((self.NUM_DRONES,4))
+        self.last_action = self.HOVER_RPM*np.ones((self.NUM_DRONES,4))
         self.last_clipped_action = np.zeros((self.NUM_DRONES,4)); self.gui_input = np.zeros(4)
         self.no_pybullet_dyn_accs = np.zeros((self.NUM_DRONES,3))
         
